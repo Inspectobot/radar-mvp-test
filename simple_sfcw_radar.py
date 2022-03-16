@@ -3,9 +3,9 @@ import time
 import matplotlib.pyplot as plot
 import numpy as np
 
-from lib.signal_processing import LowPassFilter, IQDemodulator
-from lib.digital_backend import RedPitayaSampler
-from lib.rf_source import RFsource
+from radar.signal_processing import LowPassFilter, IQDemodulator
+from radar.digital_backend import RedPitayaSampler
+from radar.rf_source import RFsource
 
 if __name__ == '__main__':
     num_samples = 2048

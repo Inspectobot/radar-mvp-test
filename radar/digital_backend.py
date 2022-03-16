@@ -1,4 +1,4 @@
-import lib.redpitaya_scpi as scpi
+import radar.redpitaya_scpi as scpi
 import numpy as np
 import struct
 
