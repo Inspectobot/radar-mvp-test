@@ -1,8 +1,8 @@
 import time
 import sys
-from lib.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
-from lib.digital_backend import RedPitayaSampler
-from lib.rf_source import  RFsource
+from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
+from radar.digital_backend import RedPitayaSampler
+from radar.rf_source import  RFsource
 import matplotlib.pyplot as plot
 import struct
 import numpy as np
@@ -15,8 +15,8 @@ if __name__ == '__main__':
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
     synth = RFsource(start_frequency=1000,
-                     step_frequency=10,
-                     number_of_frequencies=301,
+                     step_frequency=30,
+                     number_of_frequencies=101,
                      intermediate_frequency=32,
                      transmit_power=0,
                      lo_power=15,
