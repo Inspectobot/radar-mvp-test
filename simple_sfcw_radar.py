@@ -43,7 +43,6 @@ if __name__ == '__main__':
 
     bb_mixer = np.multiply(ref_iq, np.conj(dut_iq))
     bb = bb_filter(bb_mixer)
-    bb = bb_filter(bb)
 
     x = np.mean(bb[200:num_samples//2])
     print(f"f={synth.get_frequency()[0]}, Mag(x) = {np.abs(x)}, I={np.real(x)},Q={np.imag(x)}")

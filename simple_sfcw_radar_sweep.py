@@ -45,7 +45,6 @@ if __name__ == '__main__':
         dut_iq,lo,a =  if_filter (dut)
         bb_mixer = np.multiply(ref_iq,np.conj(dut_iq))
         bb = bb_filter(bb_mixer)
-        bb= bb_filter(bb)
         x[i] = np.mean(bb[200:len(bb)//2])
         print(".", end='')
         synth.frequency_step()
