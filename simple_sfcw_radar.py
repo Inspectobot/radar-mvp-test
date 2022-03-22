@@ -9,19 +9,21 @@ from radar.rf_source import RFsource
 
 if __name__ == '__main__':
     num_samples = 2048
-    if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=2e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
+    if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=2e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
-    synth = RFsource(start_frequency=2000,
-                     step_frequency=10,
+    synth = RFsource(start_frequency=1000,
+                     step_frequency=20,
                      number_of_frequencies=101,
-                     intermediate_frequency=32,
+                     intermediate_frequency=20,
                      transmit_power=0,
                      lo_power=15,
                      port='/dev/cu.usbmodem206834A0z4E561')
     synth.connect()
+    #synth.set_reference_frequency(10)
     synth.set_frequency()
     synth.set_power()
+
     synth.enable()
 
     rpi = RedPitayaSampler(n=num_samples)
@@ -41,8 +43,9 @@ if __name__ == '__main__':
     dut_iq, lo, x_mixer_o = if_filter(dut)
     ref_iq, lo, x_mixer_o = if_filter(ref_n)
 
-    bb_mixer = np.multiply(ref_iq, np.conj(dut_iq))
+    bb_mixer = np.multiply(np.conj(ref_iq)/np.abs(ref), dut_iq)
     bb = bb_filter(bb_mixer)
+
 
     x = np.mean(bb[200:num_samples//2])
     print(f"f={synth.get_frequency()[0]}, Mag(x) = {np.abs(x)}, I={np.real(x)},Q={np.imag(x)}")

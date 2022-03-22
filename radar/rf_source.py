@@ -50,6 +50,15 @@ class RFsource:
         self._synth[0].enable = False
         self._synth[1].enable = False
 
+    def set_reference_frequency(self,frequency):
+        if frequency == "10":
+            self._synth.write('reference_mode',2)
+        elif frequency == "27":
+            self._synth.write('reference_mode', 1)
+        else:
+            self._synth.write('reference_mode',0)
+            self._synth.write('ref_frequency',frequency)
+
     def frequency_step(self):
         if not self._sweep_done:
             self.set_frequency()
