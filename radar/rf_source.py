@@ -10,7 +10,7 @@ class RFsource:
                  intermediate_frequency=32,
                  transmit_power=0,
                  lo_power=15,
-                 port='/dev/cu.usbmodem206834A04E561'):
+                 port='/dev/ttyACM0'):
         self._port = port
         self._synth = None
         self._fs = start_frequency
@@ -37,7 +37,7 @@ class RFsource:
         self._synth.write('power', self._p_lo)
 
     def connect(self):
-        self._synth = SynthHD('/dev/cu.usbmodem206834A04E561')
+        self._synth = SynthHD('/dev/ttyACM0')
         self._synth.init()
         return self._synth
 

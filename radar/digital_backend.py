@@ -7,7 +7,7 @@ class RedPitayaSampler:
     """
     Control sampling
     """
-    def __init__(self, ip='192.168.0.153', fs=122.88e6, n=1024):
+    def __init__(self, ip='192.168.3.180', fs=122.88e6, n=1024):
         self._ip = ip
         self._rp_s = None
         self._fs = fs
