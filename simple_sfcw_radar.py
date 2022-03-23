@@ -18,7 +18,7 @@ if __name__ == '__main__':
                      intermediate_frequency=20,
                      transmit_power=0,
                      lo_power=15,
-                     port='/dev/cu.usbmodem206834A0z4E561')
+                     port='/dev/ttyACM0')
     synth.connect()
     #synth.set_reference_frequency(10)
     synth.set_frequency()
