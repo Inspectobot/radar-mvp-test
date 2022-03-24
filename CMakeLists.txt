@@ -15,6 +15,10 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 find_path(REDIS_PLUS_PLUS_HEADER sw)
 
+include_directories (
+  /opt/redpitaya/include
+)
+
 file (GLOB_RECURSE source RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
 find_package(Threads REQUIRED)
@@ -29,4 +33,4 @@ add_executable(radar_redis_driver ${PROJECT_SOURCE_DIR}/radar_redis_driver.cpp)
 
 set_target_properties(radar_redis_driver PROPERTIES CXX_STANDARD 17)
 
-target_link_libraries(radar_redis_driver -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} Threads::Threads -lmsgpackc)
+target_link_libraries(radar_redis_driver -L/opt/redpitaya/lib -lrp -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} Threads::Threads -lmsgpackc)
