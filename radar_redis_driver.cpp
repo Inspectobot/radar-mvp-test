@@ -56,7 +56,9 @@ int main (int argc, char **argv) {
 
   rp_acq_decimation_t adc_precision = RP_DEC_1;
   rp_acq_trig_src_t trigger_src = RP_TRIG_SRC_NOW;
+  rp_acq_sampling_rate_t sampling_rate = RP_SMP_122_880M; 
 
+  rp_AcqSetSamplingRate(sampling_rate);
   rp_AcqSetDecimation(adc_precision);
 
   int startFrequency   = 1000;
@@ -65,6 +67,9 @@ int main (int argc, char **argv) {
   int intermediateFreq = 32;
   int transmitPower    = 0;
   int loPower          = 15;
+  uint32_t sampleCount = 16384;
+
+  long long int sampleTimeInNs = (1 / ADC_SAMPLE_RATE) * sampleCount * 1000000000;
 
   rfSource = new SerialPort("/dev/ttyACM0", BaudRate::B_57600, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
   rfSource->SetTimeout(0);
@@ -90,22 +95,20 @@ int main (int argc, char **argv) {
   for(int i = 0; i < frequencyCount; i++) {
     int64_t startTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
-    printf("Sweeping frequency: %d...", startFrequency + (i * stepFrequency));
+    printf("Sweeping frequency (%f us buffer time): %d...", sampleTimeInNs * 0.001, startFrequency + (i * stepFrequency));
     
+    bool fillState = false;
+    
+    float *dut_buff = (float *)malloc(sampleCount * sizeof(float));
+    float *ref_buff = (float *)malloc(sampleCount * sizeof(float));
+   
     rp_AcqStart();
 
+    std::this_thread::sleep_for(std::chrono::nanoseconds(sampleTimeInNs));
+  
     rp_AcqSetTriggerSrc(trigger_src);
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(50)); 
-
     rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
-    bool fillState = false;
-    uint32_t buff_size = 16384;
-    
-    float *dut_buff = (float *)malloc(buff_size * sizeof(float));
-    float *ref_buff = (float *)malloc(buff_size * sizeof(float));
-   
     while(1) {
       rp_AcqGetTriggerState(&state);
       if(state == RP_TRIG_STATE_TRIGGERED) {
@@ -119,8 +122,8 @@ int main (int argc, char **argv) {
 
     rp_AcqStop();
     
-    rp_AcqGetOldestDataV(RP_CH_1, &buff_size, dut_buff);
-    rp_AcqGetOldestDataV(RP_CH_2, &buff_size, ref_buff);
+    rp_AcqGetOldestDataV(RP_CH_1, &sampleCount, dut_buff);
+    rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, ref_buff);
 
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     
@@ -129,9 +132,9 @@ int main (int argc, char **argv) {
     free(dut_buff);
     free(ref_buff);
     
-    std::this_thread::sleep_for(std::chrono::milliseconds(50)); 
-  
     setFrequency(startFrequency + (i * stepFrequency), intermediateFreq);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
   }
 
   rfSource->Write("C0");
