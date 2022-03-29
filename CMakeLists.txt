@@ -29,8 +29,10 @@ find_library(HIREDIS_LIBRARY hiredis)
 
 find_library(REDIS_PLUS_PLUS_LIB redis++)
 
+find_library(SERIAL_LIBRARY CppLinuxSerial)
+
 add_executable(radar_redis_driver ${PROJECT_SOURCE_DIR}/radar_redis_driver.cpp)
 
 set_target_properties(radar_redis_driver PROPERTIES CXX_STANDARD 17)
 
-target_link_libraries(radar_redis_driver -L/opt/redpitaya/lib -lrp -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} Threads::Threads -lmsgpackc)
+target_link_libraries(radar_redis_driver -L/opt/redpitaya/lib -lrp -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} ${SERIAL_LIBRARY} Threads::Threads -lmsgpackc)
