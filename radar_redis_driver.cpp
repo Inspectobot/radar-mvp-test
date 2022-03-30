@@ -67,7 +67,7 @@ int main (int argc, char **argv) {
   int intermediateFreq = 32;
   int transmitPower    = 0;
   int loPower          = 15;
-  uint32_t sampleCount = 16384;
+  uint32_t sampleCount = 1024;
 
   long long int sampleTimeInNs = (1 / ADC_SAMPLE_RATE) * sampleCount * 1000000000;
 
@@ -92,16 +92,17 @@ int main (int argc, char **argv) {
   rfSource->Write("E1");
   rfSource->Write("r1");
 
-  for(int i = 0; i < frequencyCount; i++) {
-    int64_t startTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+  float *dut_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
+  float *ref_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
+ 
+  //uint16_t *dut_buff = (uint16_t *)malloc(sampleCount * frequencyCount * sizeof(uint16_t));
+  //uint16_t *ref_buff = (uint16_t *)malloc(sampleCount * frequencyCount * sizeof(uint16_t));
+  
+  int64_t startTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
-    printf("Sweeping frequency (%f us buffer time): %d...", sampleTimeInNs * 0.001, startFrequency + (i * stepFrequency));
-    
+  for(int i = 0; i < frequencyCount; i++) {
     bool fillState = false;
     
-    float *dut_buff = (float *)malloc(sampleCount * sizeof(float));
-    float *ref_buff = (float *)malloc(sampleCount * sizeof(float));
-   
     rp_AcqStart();
 
     std::this_thread::sleep_for(std::chrono::nanoseconds(sampleTimeInNs));
@@ -122,20 +123,21 @@ int main (int argc, char **argv) {
 
     rp_AcqStop();
     
-    rp_AcqGetOldestDataV(RP_CH_1, &sampleCount, dut_buff);
-    rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, ref_buff);
+    //rp_AcqGetDataRawV2(0, &sampleCount, &dut_buff[i * sizeof(uint16_t)], &ref_buff[i * sizeof(uint16_t)]);
 
-    int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-    
-    printf("Acquiring Done, took %lld microseconds\n", endTime - startTime);
-
-    free(dut_buff);
-    free(ref_buff);
-    
+    rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i * sizeof(float)], &ref_buff[i * sizeof(float)]);
+   
     setFrequency(startFrequency + (i * stepFrequency), intermediateFreq);
-
+    
     std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
   }
+
+  int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+  
+  printf("Sweep Done, took %lld microseconds\n", endTime - startTime);
+
+  free(dut_buff);
+  free(ref_buff);
 
   rfSource->Write("C0");
 
