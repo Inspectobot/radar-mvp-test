@@ -25,7 +25,12 @@
 #include "rp.h"
 #include <sw/redis++/redis++.h>
 
+#include "ringbuffer.hpp"
+
+#include <thread>
+
 #define TCP_PORT 1001
+#define PROFILE_BUFFER_SIZE 256
 
 using namespace std::chrono;
 
@@ -36,17 +41,31 @@ using namespace mn::CppLinuxSerial;
 
 int64_t startupTimestamp;
 
+int startFrequency   = 1000;
+int stepFrequency    = 20;
+int frequencyCount   = 101;
+int intermediateFreq = 32;
+int transmitPower    = 0;
+int loPower          = 15;
+uint32_t sampleCount = 101;
+
 static volatile int keepRunning = 1;
 
 SerialPort* rfSource;
 Redis* redis;
 
-void intHandler(int dummy) {
-	if (keepRunning == 0) {
-		exit(-1);
-	}
-	keepRunning = 0;
-}
+enum ProfileType {
+  DUT,
+  REF
+};
+
+struct RadarProfile {
+  uint32_t timestamp;
+  
+  ProfileType type;
+
+  uint16_t data[];
+};
 
 void setFrequency(int frequency, int intermediateFrequency) {
   rfSource->Write("C0");
@@ -84,6 +103,15 @@ void disableExcitation() {
   rfSource->Write("r0");
 }
 
+void intHandler(int dummy) {
+	if (keepRunning == 0) {
+		printf("shutting down!\n");
+    disableExcitation();
+    exit(-1);
+	}
+	keepRunning = 0;
+}
+
 void setupSweep(
     int startFrequency, 
     int stepFrequency, 
@@ -119,27 +147,20 @@ void runSingleSweep() {
   rfSource->Write("g1");
 }
 
-int main (int argc, char **argv) {
-  signal(SIGABRT, intHandler);
-  signal(SIGTERM, intHandler);
-  signal(SIGINT, intHandler);
-  
-  int sock_server, sock_client;
-  cpu_set_t mask;
+jnk0le::Ringbuffer<RadarProfile*, PROFILE_BUFFER_SIZE> dutProfileRingBuffer;
+jnk0le::Ringbuffer<RadarProfile*, PROFILE_BUFFER_SIZE> refProfileRingBuffer;
 
+struct RadarProfile* dutProfileBuffer[PROFILE_BUFFER_SIZE];
+struct RadarProfile* refProfileBuffer[PROFILE_BUFFER_SIZE];
+
+void tcpDataServerTask() {
+  int sock_server, sock_client;
   int yes = 1;
-  
-  struct sched_param param;
+
   struct sockaddr_in addr; 
 
-  memset(&param, 0, sizeof(param));
-  param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-  sched_setscheduler(0, SCHED_FIFO, &param);
-  
-  CPU_ZERO(&mask);
-  CPU_SET(1, &mask);
-  sched_setaffinity(0, sizeof(cpu_set_t), &mask);
-  
+  printf("Started tcp server task\n");
+
   if((sock_server = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     printf("Error opening listening socket\n"); 
     exit(0);
@@ -159,10 +180,52 @@ int main (int argc, char **argv) {
 
   listen(sock_server, 1024);
   
-  if((sock_client = accept(sock_server, NULL, NULL)) < 0) {
-    printf("Error accepting connection on socket\n");
-    exit(0);
+  while(keepRunning) {
+    if((sock_client = accept(sock_server, NULL, NULL)) < 0) {
+      printf("Error accepting connection on socket\n");
+      exit(0);
+    }
+
+    size_t len = sampleCount * frequencyCount * sizeof(uint16_t);
+
+    while(true) {
+
+      struct RadarProfile* profile = nullptr;
+
+      while(!dutProfileRingBuffer.remove(profile));
+
+      size_t offset = 0;
+      ssize_t result;
+      while (offset < len) {
+        result = send(sock_client, profile->data + offset, len - offset, 0);
+        if (result < 0) {
+          printf("Error sending!");
+        }
+        
+        offset += result;
+      }
+    }
   }
+}
+
+int main (int argc, char **argv) {
+  signal(SIGABRT, intHandler);
+  signal(SIGTERM, intHandler);
+  signal(SIGINT, intHandler);
+  
+  cpu_set_t mask;
+
+  struct sched_param param;
+
+  memset(&param, 0, sizeof(param));
+  param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+  sched_setscheduler(0, SCHED_FIFO, &param);
+  
+  CPU_ZERO(&mask);
+  CPU_SET(1, &mask);
+  sched_setaffinity(0, sizeof(cpu_set_t), &mask);
+
+  thread tcpDataServerThread(tcpDataServerTask);
   
   if (rp_Init() != RP_OK) {
     fprintf(stderr, "Red Pitaya API init failed!\n");
@@ -178,14 +241,6 @@ int main (int argc, char **argv) {
 
   rp_AcqSetSamplingRate(sampling_rate);
   rp_AcqSetDecimation(adc_precision);
-
-  int startFrequency   = 1000;
-  int stepFrequency    = 20;
-  int frequencyCount   = 101;
-  int intermediateFreq = 32;
-  int transmitPower    = 0;
-  int loPower          = 15;
-  uint32_t sampleCount = 101;
 
   rp_dpin_t stepPin = RP_DIO5_N;
   rp_pinDirection_t direction = RP_OUT;
@@ -208,13 +263,33 @@ int main (int argc, char **argv) {
   
   //float *dut_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
   //float *ref_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
+
+  for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
+    struct RadarProfile* dutProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
+    struct RadarProfile* refProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
+  
+    dutProfile->type = DUT;
+    refProfile->type = REF;
  
+    dutProfileBuffer[i] = dutProfile;
+    refProfileBuffer[i] = refProfile;  
+  }
+
   uint16_t *dut_buff = (uint16_t *)calloc(sampleCount * frequencyCount, sizeof(uint16_t));
   uint16_t *ref_buff = (uint16_t *)calloc(sampleCount * frequencyCount, sizeof(uint16_t));
  
-  while(keepRunning) {    
-    int64_t startTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+  startupTimestamp = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
+  int currentBufferIndex = 0;
+
+  while(keepRunning) {
+    int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+    if(currentBufferIndex > PROFILE_BUFFER_SIZE) currentBufferIndex = 0; 
+    
+    dutProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
+    refProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
+    
     for(int i = 0; i < frequencyCount; i++) {
       bool fillState = false;
       rp_AcqStart();
@@ -238,7 +313,14 @@ int main (int argc, char **argv) {
 
       rp_AcqStop();
       
-      rp_AcqGetDataRawV2(0, &sampleCount, &dut_buff[i * frequencyCount * sizeof(uint16_t)], &ref_buff[i * frequencyCount * sizeof(uint16_t)]);
+      rp_AcqGetDataRawV2(0, 
+        &sampleCount, 
+        &dutProfileBuffer[currentBufferIndex]->data[i * frequencyCount * sizeof(uint16_t)], 
+        &refProfileBuffer[currentBufferIndex]->data[i * frequencyCount * sizeof(uint16_t)]);
+
+
+      dutProfileRingBuffer.insert(&dutProfileBuffer[currentBufferIndex]);
+      refProfileRingBuffer.insert(&refProfileBuffer[currentBufferIndex]);
 
       //rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i], &ref_buff[i]);
 
@@ -249,23 +331,12 @@ int main (int argc, char **argv) {
       rp_DpinSetState(stepPin, RP_LOW);
     }
   
-    size_t len = sampleCount * frequencyCount * sizeof(uint16_t);
-
-    size_t offset = 0;
-    ssize_t result;
-    while (offset < len) {
-      result = send(sock_client, dut_buff + offset, len - offset, 0);
-      if (result < 0) {
-        printf("Error sending!");
-      }
-      
-      offset += result;
-    }
-   
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     
-    printf("Sweep Done, took %lld microseconds\n", endTime - startTime);
+    printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
+
+  tcpDataServerThread.join();
 
   free(dut_buff);
   free(ref_buff);
@@ -273,6 +344,8 @@ int main (int argc, char **argv) {
   disableExcitation();
   
   rp_Release();
+
+  printf("done!!");
 
   return 0;
 }
