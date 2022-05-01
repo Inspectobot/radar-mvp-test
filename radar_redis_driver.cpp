@@ -30,7 +30,7 @@
 #include <thread>
 
 #define TCP_PORT 1001
-#define PROFILE_BUFFER_SIZE 256
+#define PROFILE_BUFFER_SIZE 1024
 
 using namespace std::chrono;
 
@@ -156,6 +156,18 @@ struct RadarProfile* dutProfileBuffer[PROFILE_BUFFER_SIZE];
 struct RadarProfile* refProfileBuffer[PROFILE_BUFFER_SIZE];
 
 void tcpDataServerTask() {
+  cpu_set_t mask;
+
+  struct sched_param param;
+
+  memset(&param, 0, sizeof(param));
+  param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+  sched_setscheduler(0, SCHED_FIFO, &param);
+  
+  CPU_ZERO(&mask);
+  CPU_SET(0, &mask);
+  sched_setaffinity(0, sizeof(cpu_set_t), &mask);
+
   int sock_server, sock_client;
   int yes = 1;
 
@@ -188,25 +200,28 @@ void tcpDataServerTask() {
       keepRunning = false;
     }
 
-    size_t len = sampleCount * frequencyCount * sizeof(uint16_t);
+    size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t));
 
-    while(true) {
+    char *data;
+    data = (char *) malloc(len);
 
+    while(keepRunning) {
+      
       struct RadarProfile* profile = nullptr;
 
-      while(!profileBuffer.remove(profile));
+      while(!profileBuffer.remove(profile)) sched_yield();
 
+      memcpy(data, profile, len);
+      
       size_t offset = 0;
       ssize_t result;
       while (offset < len) {
-        result = send(sock_client, profile->data + offset, len - offset, 0);
+        result = send(sock_client, data + offset, len - offset, 0);
         if (result < 0) {
-          printf("Error sending!");
-          close(sock_server);
-          keepRunning = false;
+          printf("Error sending!\n");
           exit(0);
         }
-        
+
         offset += result;
       }
     }
@@ -217,6 +232,8 @@ int main (int argc, char **argv) {
   signal(SIGABRT, intHandler);
   signal(SIGTERM, intHandler);
   signal(SIGINT, intHandler);
+  
+  thread tcpDataServerThread(tcpDataServerTask);
   
   cpu_set_t mask;
 
@@ -230,8 +247,6 @@ int main (int argc, char **argv) {
   CPU_SET(1, &mask);
   sched_setaffinity(0, sizeof(cpu_set_t), &mask);
 
-  thread tcpDataServerThread(tcpDataServerTask);
-  
   if (rp_Init() != RP_OK) {
     fprintf(stderr, "Red Pitaya API init failed!\n");
     exit(0);
@@ -321,11 +336,11 @@ int main (int argc, char **argv) {
       //rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i], &ref_buff[i]);
 
       rp_DpinSetState(stepPin, RP_HIGH);
-      std::this_thread::sleep_for(std::chrono::microseconds(200));
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
       rp_DpinSetState(stepPin, RP_LOW);
     }
  
-    //currentBufferIndex++; 
+    currentBufferIndex++; 
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     
     printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
