@@ -1,0 +1,5 @@
+#!/bin/sh -e
+
+ptpd2 --slaveonly --interface eth0
+
+exit 0
