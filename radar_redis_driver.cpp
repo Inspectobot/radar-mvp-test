@@ -107,6 +107,9 @@ void intHandler(int dummy) {
 	if (keepRunning == 0) {
 		printf("shutting down!\n");
     disableExcitation();
+    
+    rp_Release();
+
     exit(-1);
 	}
 	keepRunning = 0;
@@ -147,8 +150,7 @@ void runSingleSweep() {
   rfSource->Write("g1");
 }
 
-jnk0le::Ringbuffer<RadarProfile*, PROFILE_BUFFER_SIZE> dutProfileRingBuffer;
-jnk0le::Ringbuffer<RadarProfile*, PROFILE_BUFFER_SIZE> refProfileRingBuffer;
+jnk0le::Ringbuffer<RadarProfile*, PROFILE_BUFFER_SIZE * 2> profileBuffer;
 
 struct RadarProfile* dutProfileBuffer[PROFILE_BUFFER_SIZE];
 struct RadarProfile* refProfileBuffer[PROFILE_BUFFER_SIZE];
@@ -163,7 +165,7 @@ void tcpDataServerTask() {
 
   if((sock_server = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     printf("Error opening listening socket\n"); 
-    exit(0);
+    keepRunning = false;
   }
 
   setsockopt(sock_server, SOL_SOCKET, SO_REUSEADDR, (void *)&yes, sizeof(yes));
@@ -175,7 +177,7 @@ void tcpDataServerTask() {
   
   if(bind(sock_server, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     printf("Error binding to socket\n");
-    exit(0);
+    keepRunning = false;
   }
 
   listen(sock_server, 1024);
@@ -183,7 +185,7 @@ void tcpDataServerTask() {
   while(keepRunning) {
     if((sock_client = accept(sock_server, NULL, NULL)) < 0) {
       printf("Error accepting connection on socket\n");
-      exit(0);
+      keepRunning = false;
     }
 
     size_t len = sampleCount * frequencyCount * sizeof(uint16_t);
@@ -192,7 +194,7 @@ void tcpDataServerTask() {
 
       struct RadarProfile* profile = nullptr;
 
-      while(!dutProfileRingBuffer.remove(profile));
+      while(!profileBuffer.remove(profile));
 
       size_t offset = 0;
       ssize_t result;
@@ -200,6 +202,9 @@ void tcpDataServerTask() {
         result = send(sock_client, profile->data + offset, len - offset, 0);
         if (result < 0) {
           printf("Error sending!");
+          close(sock_server);
+          keepRunning = false;
+          exit(0);
         }
         
         offset += result;
@@ -259,11 +264,6 @@ int main (int argc, char **argv) {
 
   setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, float(sampleTimeInNs / 1000000));
 
-  //runContinuousSweep();
-  
-  //float *dut_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
-  //float *ref_buff = (float *)malloc(sampleCount * frequencyCount * sizeof(float));
-
   for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
     struct RadarProfile* dutProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
     struct RadarProfile* refProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
@@ -275,9 +275,6 @@ int main (int argc, char **argv) {
     refProfileBuffer[i] = refProfile;  
   }
 
-  uint16_t *dut_buff = (uint16_t *)calloc(sampleCount * frequencyCount, sizeof(uint16_t));
-  uint16_t *ref_buff = (uint16_t *)calloc(sampleCount * frequencyCount, sizeof(uint16_t));
- 
   startupTimestamp = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
   int currentBufferIndex = 0;
@@ -285,7 +282,7 @@ int main (int argc, char **argv) {
   while(keepRunning) {
     int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
-    if(currentBufferIndex > PROFILE_BUFFER_SIZE) currentBufferIndex = 0; 
+    if(currentBufferIndex > (PROFILE_BUFFER_SIZE - 1)) currentBufferIndex = 0; 
     
     dutProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
     refProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
@@ -299,7 +296,7 @@ int main (int argc, char **argv) {
       rp_AcqSetTriggerSrc(trigger_src);
       rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
-      while(1) {
+      while(true) {
         rp_AcqGetTriggerState(&state);
         
         if(state == RP_TRIG_STATE_TRIGGERED) {
@@ -315,37 +312,33 @@ int main (int argc, char **argv) {
       
       rp_AcqGetDataRawV2(0, 
         &sampleCount, 
-        &dutProfileBuffer[currentBufferIndex]->data[i * frequencyCount * sizeof(uint16_t)], 
-        &refProfileBuffer[currentBufferIndex]->data[i * frequencyCount * sizeof(uint16_t)]);
+        &refProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(uint16_t)],
+        &dutProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(uint16_t)]);
 
-
-      dutProfileRingBuffer.insert(&dutProfileBuffer[currentBufferIndex]);
-      refProfileRingBuffer.insert(&refProfileBuffer[currentBufferIndex]);
+      profileBuffer.insert(&dutProfileBuffer[currentBufferIndex]);
+      profileBuffer.insert(&refProfileBuffer[currentBufferIndex]);
 
       //rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i], &ref_buff[i]);
 
-      //setFrequency(startFrequency + (i * stepFrequency), intermediateFreq);
-     
       rp_DpinSetState(stepPin, RP_HIGH);
       std::this_thread::sleep_for(std::chrono::microseconds(200));
       rp_DpinSetState(stepPin, RP_LOW);
     }
-  
+ 
+    //currentBufferIndex++; 
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     
     printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
 
-  tcpDataServerThread.join();
-
-  free(dut_buff);
-  free(ref_buff);
+  for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
+    free(dutProfileBuffer[i]);
+    free(refProfileBuffer[i]);
+  }
 
   disableExcitation();
   
   rp_Release();
-
-  printf("done!!");
 
   return 0;
 }
