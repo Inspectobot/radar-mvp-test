@@ -36,14 +36,15 @@ using namespace std::chrono;
 
 using namespace std;
 using namespace sw::redis;
-
 using namespace mn::CppLinuxSerial;
+
+const string STARTUP_TIMESTAMP_KEY ="rover_startup_timestamp";
 
 int64_t startupTimestamp;
 
 int startFrequency   = 1000;
 int stepFrequency    = 20;
-int frequencyCount   = 101;
+uint16_t frequencyCount   = 101;
 int intermediateFreq = 32;
 int transmitPower    = 0;
 int loPower          = 15;
@@ -54,7 +55,7 @@ static volatile int keepRunning = 1;
 SerialPort* rfSource;
 Redis* redis;
 
-enum ProfileType {
+enum ProfileType : char {
   DUT,
   REF
 };
@@ -118,7 +119,7 @@ void intHandler(int dummy) {
 void setupSweep(
     int startFrequency, 
     int stepFrequency, 
-    int frequencyCount, 
+    uint16_t frequencyCount, 
     int intermediateFrequency,
     float stepTimeInMs) {
 
@@ -202,6 +203,8 @@ void tcpDataServerTask() {
 
     size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t));
 
+    printf("size in bytes %zu\n", len);
+
     char *data;
     data = (char *) malloc(len);
 
@@ -210,7 +213,7 @@ void tcpDataServerTask() {
       struct RadarProfile* profile = nullptr;
 
       while(!profileBuffer.remove(profile)) sched_yield();
-
+      
       memcpy(data, profile, len);
       
       size_t offset = 0;
@@ -219,7 +222,7 @@ void tcpDataServerTask() {
         result = send(sock_client, data + offset, len - offset, 0);
         if (result < 0) {
           printf("Error sending!\n");
-          exit(0);
+          keepRunning = 0;
         }
 
         offset += result;
@@ -232,7 +235,28 @@ int main (int argc, char **argv) {
   signal(SIGABRT, intHandler);
   signal(SIGTERM, intHandler);
   signal(SIGINT, intHandler);
+
+  ConnectionOptions redisConnectionOpts;
+
+  redisConnectionOpts.host = "rover";
+  redisConnectionOpts.port = 6379;
+  redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5); 
   
+  redis = new Redis(redisConnectionOpts);
+
+  auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
+  if(timestamp) {
+    string timestampString = *timestamp;
+
+    startupTimestamp = atoll(timestampString.c_str());
+  } else {
+    std::cout << "Rover startup timestamp not set or invalid, check key: " << STARTUP_TIMESTAMP_KEY << std::endl;
+
+    exit(0);
+  }
+
+  std::cout << "Rover startup timestamp: " << startupTimestamp << std::endl;
+
   thread tcpDataServerThread(tcpDataServerTask);
   
   cpu_set_t mask;
@@ -290,8 +314,6 @@ int main (int argc, char **argv) {
     refProfileBuffer[i] = refProfile;  
   }
 
-  startupTimestamp = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-
   int currentBufferIndex = 0;
 
   while(keepRunning) {
@@ -301,8 +323,8 @@ int main (int argc, char **argv) {
     
     dutProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
     refProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
-    
-    for(int i = 0; i < frequencyCount; i++) {
+
+    for(uint16_t i = 0; i < frequencyCount; i++) {
       bool fillState = false;
       rp_AcqStart();
 
