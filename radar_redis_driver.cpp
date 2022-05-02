@@ -55,10 +55,10 @@ static volatile int keepRunning = 1;
 SerialPort* rfSource;
 Redis* redis;
 
-enum ProfileType : char {
-  DUT,
+enum ProfileType {
+  DUT = 0,
   REF
-};
+} __attribute__ ((__packed__));
 
 struct RadarProfile {
   uint32_t timestamp;
