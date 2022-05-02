@@ -39,6 +39,7 @@ using namespace sw::redis;
 using namespace mn::CppLinuxSerial;
 
 const string STARTUP_TIMESTAMP_KEY ="rover_startup_timestamp";
+const string PARAMETERS_KEY = "radar_parameters";
 
 int64_t startupTimestamp;
 
@@ -49,8 +50,64 @@ int intermediateFreq = 32;
 int transmitPower    = 0;
 int loPower          = 15;
 uint32_t sampleCount = 101;
+uint16_t settlingTime = 100;
 
 static volatile int keepRunning = 1;
+
+struct ParametersMessage {
+  uint32_t timestamp = 0;
+
+  int startFrequency = 1000;
+  int stepFrequency = 20;
+  uint16_t frequencyCount = 101;
+  int intermediateFreq = 32;
+  int transmitPower = 0;
+  int loPower = 15;
+  uint32_t sampleCount = 101;
+  uint16_t settlingTime = 100;
+
+  MSGPACK_DEFINE_MAP(
+    timestamp,
+
+    startFrequency,
+    stepFrequency,
+    frequencyCount,
+    intermediateFreq,
+    transmitPower,
+    loPower,
+    sampleCount,
+    settlingTime
+  )
+};
+
+ParametersMessage lastParametersMessage;
+
+void updateParameters(ParametersMessage parametersMessage) {
+  lastParametersMessage = parametersMessage;
+
+  startFrequency = parametersMessage.startFrequency;
+  stepFrequency = parametersMessage.stepFrequency;
+  frequencyCount = parametersMessage.frequencyCount;
+  intermediateFreq = parametersMessage.intermediateFreq;
+
+  transmitPower = parametersMessage.transmitPower;
+  loPower = parametersMessage.loPower;
+  sampleCount = parametersMessage.sampleCount;
+  settlingTime = parametersMessage.settlingTime;
+}
+
+void updateParametersFromString(string parametersString) {
+  msgpack::object_handle oh = msgpack::unpack(parametersString.data(), parametersString.size());
+
+  msgpack::object deserialized = oh.get();
+
+  std::cout << "updated parameters: " << deserialized << std::endl;
+
+  ParametersMessage parametersMessage;
+  deserialized.convert(parametersMessage);
+
+  updateParameters(parametersMessage);
+}
 
 SerialPort* rfSource;
 Redis* redis;
@@ -257,6 +314,34 @@ int main (int argc, char **argv) {
 
   std::cout << "Rover startup timestamp: " << startupTimestamp << std::endl;
 
+  auto parameters = redis->get(PARAMETERS_KEY);
+
+  if(parameters) {
+    string parametersString = *parameters;
+
+    updateParametersFromString(parametersString);
+  } else {
+
+    ParametersMessage parametersMessage;
+
+    std::stringstream packed;
+    msgpack::pack(packed, parametersMessage);
+
+    packed.seekg(0);
+
+    std::string str(packed.str());
+
+    msgpack::object_handle oh =
+      msgpack::unpack(str.data(), str.size());
+
+    msgpack::object deserialized = oh.get();
+    std::cout << "reset parameters: " << deserialized << std::endl;
+
+    redis->set(PARAMETERS_KEY, packed.str());
+
+    updateParameters(parametersMessage);
+  }
+  
   thread tcpDataServerThread(tcpDataServerTask);
   
   cpu_set_t mask;
@@ -358,7 +443,7 @@ int main (int argc, char **argv) {
       //rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i], &ref_buff[i]);
 
       rp_DpinSetState(stepPin, RP_HIGH);
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      std::this_thread::sleep_for(std::chrono::microseconds(settlingTime));
       rp_DpinSetState(stepPin, RP_LOW);
     }
  
