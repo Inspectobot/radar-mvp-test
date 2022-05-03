@@ -22,7 +22,7 @@ function decodeProfile(data) {
   var timestamp = data.readUInt32LE();
   var type      = data.readUInt8(4);
 
-  console.log(type);
+  console.log(timestamp, type);
 
   var profileData = new Array(frequencyCount);
   for(var i = 0; i < frequencyCount; i++) {
