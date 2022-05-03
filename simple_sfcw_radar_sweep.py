@@ -1,57 +1,67 @@
 import time
 import sys
+import ctypes as c
+
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
-from radar.digital_backend import RedPitayaSampler
-from radar.rf_source import  RFsource
+from radar.client import ProfileType, CreateRadarProfile 
+
 import matplotlib.pyplot as plot
-import struct
 import numpy as np
 from scipy import signal
 
+import socket
 
 if __name__ == '__main__':
-    num_samples = 16384
+    num_samples = 101
+    number_of_frequencies = 101
+    start_frequency = 1000
+    step_frequency = 10
+    number_of_frequencies = 201
+    intermediate_frequency = 20
+    transmit_power = 0
+    lo_power = 15
+
+    RadarProfile = CreateRadarProfile(num_samples, number_of_frequencies)
+
     if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=1e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=1e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
-    synth = RFsource(start_frequency=1000,
-                     step_frequency=10,
-                     number_of_frequencies=201,
-                     intermediate_frequency=20,
-                     transmit_power=0,
-                     lo_power=15,
-                     port='/dev/ttyACM0')
-    synth.connect()
-    synth.set_frequency()
-    synth.set_power()
-    synth.enable()
-    time.sleep(0.5)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address = ('radar', 1001)
 
-    N = synth.get_number_frequency_steps()
-    x = np.zeros(N, dtype=complex)
+    dutProfile = None
+    refProfile = None
 
-    rpi = RedPitayaSampler(n=num_samples)
-    rpi.connect()
-    rpi.configure_sampler()
-
+    sock.connect(server_address)
+    
     print("Scanning ", end='')
+    while (dutProfile is None or refProfile is None) or (dutProfile.timestamp != refProfile.timestamp):
+      profile = RadarProfile()
+      data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
+      c.memmove(c.addressof(profile), data, c.sizeof(profile))
+
+      if(profile.type == ProfileType.DUT):
+        dutProfile = profile
+      
+      if(profile.type == ProfileType.REF):
+        refProfile = profile
+
+    N = 101
+    x = np.zeros(N, dtype=complex)
+    f = np.linspace(start_frequency, start_frequency + number_of_frequencies * step_frequency, number_of_frequencies)
+
     for i in range(N):
-        rpi.trigger_sampler()
-        time.sleep(0.05)
-        dut = rpi.get_data(channel=1)
-        ref = rpi.get_data(channel=2)
-        ref_n = ref/np.max(np.abs(ref))
-        ref_iq,lo,a=  if_filter (ref_n)
-        dut_iq,lo,a =  if_filter (dut)
-        bb_mixer = np.multiply(ref_iq/np.abs(ref_iq),np.conj(dut_iq))
-        bb = bb_filter(bb_mixer)
-        bb = bb_filter(bb)
-        x[i] = np.mean(bb[200:len(bb)//2])
-        print(".", end='')
-        synth.frequency_step()
-        time.sleep(0.05)
-    print ("done")
-    f = synth.get_frequency_range()
+      dut = dutProfile.getSamplesAtIndex(i)
+      ref = refProfile.getSamplesAtIndex(i)
+      ref_n = ref/np.max(np.abs(ref))
+      ref_iq,lo,a=  if_filter (ref_n)
+      dut_iq,lo,a =  if_filter (dut)
+      bb_mixer = np.multiply(ref_iq/np.abs(ref_iq),np.conj(dut_iq))
+      bb = bb_filter(bb_mixer)
+      bb = bb_filter(bb)
+      x[i] = np.mean(bb[200:len(bb)//2])
+      print(".", end='')
+    
     f = f[1:]
     x = x[1:]
     N=N-1
@@ -114,7 +124,3 @@ if __name__ == '__main__':
     plot.title('Plot of radar range profile ')
     plot.xlim([0.5,1.5])
     plot.show()
-
-
-    rpi.stop_sampler()
-    synth.close()
