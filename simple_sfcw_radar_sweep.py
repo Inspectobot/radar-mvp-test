@@ -20,7 +20,7 @@ if __name__ == '__main__':
                      intermediate_frequency=20,
                      transmit_power=0,
                      lo_power=15,
-                     port='/dev/cu.usbmodem206834A04E561')
+                     port='/dev/ttyACM0')
     synth.connect()
     synth.set_frequency()
     synth.set_power()
@@ -38,8 +38,8 @@ if __name__ == '__main__':
     for i in range(N):
         rpi.trigger_sampler()
         time.sleep(0.05)
-        dut = rpi.get_data(channel=1)
-        ref = rpi.get_data(channel=2)
+        dut = rpi.get_data(channel=2)
+        ref = rpi.get_data(channel=1)
         ref_n = ref/np.max(np.abs(ref))
         ref_iq,lo,a=  if_filter (ref_n)
         dut_iq,lo,a =  if_filter (dut)
