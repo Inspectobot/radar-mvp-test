@@ -11,12 +11,13 @@ def CreateRadarProfile(num_samples = 101, number_of_frequencies = 101):
     _fields_ = [
       ('timestamp', c.c_uint32),
       ('type', c.c_int, 4),
-      ('data', c.c_uint16 * (num_samples * number_of_frequencies))
+      ('data', c.c_float * (num_samples * number_of_frequencies))
     ]
 
     def getSamplesAtIndex(self, index = 0):
-      d = np.array(list(self.data))
-      return d[index * num_samples:num_samples].copy()
+      d = np.array(self.data)
+      d = d.reshape(number_of_frequencies, num_samples)
+      return d[index]
 
   return RadarProfile
 
