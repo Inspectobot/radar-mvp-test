@@ -30,7 +30,7 @@
 #include <thread>
 
 #define TCP_PORT 1001
-#define PROFILE_BUFFER_SIZE 1024
+#define PROFILE_BUFFER_SIZE 8
 
 using namespace std::chrono;
 
@@ -44,13 +44,14 @@ const string PARAMETERS_KEY = "radar_parameters";
 int64_t startupTimestamp;
 
 int startFrequency   = 1000;
-int stepFrequency    = 20;
-uint16_t frequencyCount   = 101;
-int intermediateFreq = 32;
+int stepFrequency    = 10;
+int frequencyCount   = 201;
+
+int intermediateFreq = 20;
 int transmitPower    = 0;
 int loPower          = 15;
 uint32_t sampleCount = 101;
-uint16_t settlingTime = 100;
+int settlingTime = 5000;
 
 static volatile int keepRunning = 1;
 
@@ -58,13 +59,13 @@ struct ParametersMessage {
   uint32_t timestamp = 0;
 
   int startFrequency = 1000;
-  int stepFrequency = 20;
-  uint16_t frequencyCount = 101;
-  int intermediateFreq = 32;
+  int stepFrequency = 10;
+  int frequencyCount = 201;
+  int intermediateFreq = 20;
   int transmitPower = 0;
   int loPower = 15;
   uint32_t sampleCount = 101;
-  uint16_t settlingTime = 100;
+  int settlingTime = 5000;
 
   MSGPACK_DEFINE_MAP(
     timestamp,
@@ -122,21 +123,21 @@ struct RadarProfile {
   
   ProfileType type;
 
-  uint16_t data[];
+  float data[];
 };
 
 void setFrequency(int frequency, int intermediateFrequency) {
   rfSource->Write("C0");
-  rfSource->Write("f" + std::to_string(frequency));
+  rfSource->Write("f" + std::to_string(float(frequency)));
   rfSource->Write("C1\n");
-  rfSource->Write("f" + std::to_string(frequency + intermediateFrequency));
+  rfSource->Write("f" + std::to_string(float(frequency + intermediateFrequency)));
 }
 
 void enableExcitation(int transmitPower, int loPower) {
   rfSource->Write("C0");
-  rfSource->Write("W" + std::to_string(transmitPower));
+  rfSource->Write("W" + std::to_string(float(transmitPower)));
   rfSource->Write("C1");
-  rfSource->Write("W" + std::to_string(loPower));
+  rfSource->Write("W" + std::to_string(float(loPower)));
 
   rfSource->Write("C0");
 
@@ -147,6 +148,16 @@ void enableExcitation(int transmitPower, int loPower) {
 
   rfSource->Write("E1");
   rfSource->Write("r1");
+}
+
+void queryFrequency() {
+  rfSource->Write("C0");
+  rfSource->Write("f?");
+
+  std::string channel0;
+  rfSource->Read(channel0);
+
+  std::cout << "Channel 0: " << channel0 << std::endl;
 }
 
 void disableExcitation() {
@@ -176,35 +187,52 @@ void intHandler(int dummy) {
 void setupSweep(
     int startFrequency, 
     int stepFrequency, 
-    uint16_t frequencyCount, 
+    int frequencyCount, 
     int intermediateFrequency,
     float stepTimeInMs) {
 
+  std::cout << "Step time in ms: " << stepTimeInMs << std::endl;
+
+  rfSource->Write("C0");
+  
   rfSource->Write("w2");
 
   rfSource->Write("l" + std::to_string(startFrequency));
+  
+  int maxStep = stepFrequency * frequencyCount;  
+  
+  std::cout << "max step: " << maxStep << std::endl;
+  rfSource->Write("u" + std::to_string(startFrequency + maxStep));
 
-  rfSource->Write("u" + std::to_string(startFrequency + (stepFrequency * frequencyCount)));
+  rfSource->Write("s" + std::to_string(float(stepFrequency)));
 
+  std::cout << std::to_string(float(stepFrequency));
+  
   rfSource->Write("t" + std::to_string(stepTimeInMs));
 
-  rfSource->Write("k" + std::to_string(intermediateFrequency));
+  rfSource->Write("k" + std::to_string(float(intermediateFrequency)));
 
+  rfSource->Write("Y1");
+  
   rfSource->Write("n2");
 
   rfSource->Write("X0");
 
   rfSource->Write("^1");
 
-  rfSource->Write("c0");
+  //rfSource->Write("c0");
 }
 
 void runContinuousSweep() {
+  rfSource->Write("C0");
+  
   rfSource->Write("c1");
   rfSource->Write("g1");
 }
 
 void runSingleSweep() {
+  rfSource->Write("C0");
+
   rfSource->Write("g1");
 }
 
@@ -258,7 +286,7 @@ void tcpDataServerTask() {
       keepRunning = false;
     }
 
-    size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t));
+    size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float));
 
     printf("size in bytes %zu\n", len);
 
@@ -380,17 +408,17 @@ int main (int argc, char **argv) {
   long long int sampleTimeInNs = (1 / ADC_SAMPLE_RATE) * sampleCount * 1000000000;
 
   rfSource = new SerialPort("/dev/ttyACM0", BaudRate::B_57600, NumDataBits::EIGHT, Parity::NONE, NumStopBits::ONE);
-  rfSource->SetTimeout(0);
+  rfSource->SetTimeout(100);
   rfSource->Open();
 
   setFrequency(startFrequency, intermediateFreq);
+  setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, (settlingTime / 1000) + (sampleTimeInNs / 1000000));
+
   enableExcitation(transmitPower, loPower);
-
-  setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, float(sampleTimeInNs / 1000000));
-
+  
   for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
-    struct RadarProfile* dutProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
-    struct RadarProfile* refProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(uint16_t)));
+    struct RadarProfile* dutProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float)));
+    struct RadarProfile* refProfile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float)));
   
     dutProfile->type = DUT;
     refProfile->type = REF;
@@ -400,7 +428,10 @@ int main (int argc, char **argv) {
   }
 
   int currentBufferIndex = 0;
+  bool hasAdjustedStepTime = false;
 
+  int64_t sampleTimes[frequencyCount];
+  
   while(keepRunning) {
     int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
@@ -409,13 +440,15 @@ int main (int argc, char **argv) {
     dutProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
     refProfileBuffer[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
 
-    for(uint16_t i = 0; i < frequencyCount; i++) {
+    for(int i = 0; i < frequencyCount; i++) {
+      //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
       bool fillState = false;
       rp_AcqStart();
 
       std::this_thread::sleep_for(std::chrono::nanoseconds(sampleTimeInNs));
     
-      rp_AcqSetTriggerSrc(trigger_src);
+      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
       rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
       while(true) {
@@ -432,21 +465,37 @@ int main (int argc, char **argv) {
 
       rp_AcqStop();
       
-      rp_AcqGetDataRawV2(0, 
+      rp_AcqGetDataV2(0, 
         &sampleCount, 
-        &refProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(uint16_t)],
-        &dutProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(uint16_t)]);
-
-      profileBuffer.insert(&dutProfileBuffer[currentBufferIndex]);
-      profileBuffer.insert(&refProfileBuffer[currentBufferIndex]);
+        &refProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(float)],
+        &dutProfileBuffer[currentBufferIndex]->data[i * sampleCount * sizeof(float)]);
 
       //rp_AcqGetDataV2(0, &sampleCount, &dut_buff[i], &ref_buff[i]);
 
       rp_DpinSetState(stepPin, RP_HIGH);
       std::this_thread::sleep_for(std::chrono::microseconds(settlingTime));
       rp_DpinSetState(stepPin, RP_LOW);
+      
+      queryFrequency();
+
+      //int64_t endSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+      //sampleTimes[i] = (endSampleTimeMicro - startSampleTimeMicro);
     }
- 
+
+    /*if(!hasAdjustedStepTime) {
+      long long int maxSampleTime = *std::max_element(sampleTimes, sampleTimes + frequencyCount);
+
+      printf("Sweep done, calculated step time of %lld microseconds", maxSampleTime);
+      
+      setFrequency(startFrequency, intermediateFreq);
+      setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, maxSampleTime / 1000);
+      
+      hasAdjustedStepTime = true;
+    } else {*/
+      profileBuffer.insert(&dutProfileBuffer[currentBufferIndex]);
+      profileBuffer.insert(&refProfileBuffer[currentBufferIndex]);
+    //}
+     
     currentBufferIndex++; 
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     
