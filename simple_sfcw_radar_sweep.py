@@ -3,7 +3,7 @@ import sys
 import ctypes as c
 
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
-from radar.client import ProfileType, CreateRadarProfile 
+from radar.client import CreateRadarProfile
 
 import matplotlib.pyplot as plot
 import numpy as np
@@ -11,48 +11,52 @@ from scipy import signal
 
 import socket
 
+import csv
 if __name__ == '__main__':
-    num_samples = 101
-    number_of_frequencies = 101
+    num_samples = 16384
+    number_of_frequencies = 201
+    number_of_channels = 2
     start_frequency = 1000
     step_frequency = 10
-    number_of_frequencies = 201
     intermediate_frequency = 20
     transmit_power = 0
     lo_power = 15
 
-    RadarProfile = CreateRadarProfile(num_samples, number_of_frequencies)
+    RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
 
     if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=1e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=1e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('radar', 1001)
-
-    dutProfile = None
-    refProfile = None
+    server_address = ('eli-rover.local', 1001)
 
     sock.connect(server_address)
-    
-    print("Scanning ", end='')
-    while (dutProfile is None or refProfile is None) or (dutProfile.timestamp != refProfile.timestamp):
-      profile = RadarProfile()
-      data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
-      c.memmove(c.addressof(profile), data, c.sizeof(profile))
+    profile = RadarProfile()
+    data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
+    c.memmove(c.addressof(profile), data, c.sizeof(profile))
 
-      if(profile.type == ProfileType.DUT):
-        dutProfile = profile
-      
-      if(profile.type == ProfileType.REF):
-        refProfile = profile
-
-    N = 101
+    N = 201
     x = np.zeros(N, dtype=complex)
     f = np.linspace(start_frequency, start_frequency + number_of_frequencies * step_frequency, number_of_frequencies)
 
+    print('done!')
+
     for i in range(N):
-      dut = dutProfile.getSamplesAtIndex(i)
-      ref = refProfile.getSamplesAtIndex(i)
+      dut = profile.getSamplesAtIndex(1, i)
+      ref = profile.getSamplesAtIndex(0, i)
+
+      np.savetxt('dut_' + str(i) + '.csv', dut, delimiter=",", newline="\n")
+      np.savetxt('ref_' + str(i) + '.csv', ref, delimiter=",", newline="\n")
+
+      print(dut)
+      print(ref)
+
+
+      print(i)
+      print('dut')
+      print(len(dut))
+      print('ref')
+      print(len(ref))
       ref_n = ref/np.max(np.abs(ref))
       ref_iq,lo,a=  if_filter (ref_n)
       dut_iq,lo,a =  if_filter (dut)
@@ -60,8 +64,7 @@ if __name__ == '__main__':
       bb = bb_filter(bb_mixer)
       bb = bb_filter(bb)
       x[i] = np.mean(bb[200:len(bb)//2])
-      print(".", end='')
-    
+
     f = f[1:]
     x = x[1:]
     N=N-1
@@ -82,8 +85,8 @@ if __name__ == '__main__':
     plot.ylabel('Phase in radians')
     plot.title('Plot of phase as a function of frequency')
 
-    M=synth.get_number_frequency_steps()*10;
-    r_max = 3e8/2/(synth.get_frequency_step()*1e6)
+    M=number_of_frequencies*10;
+    r_max = 3e8/2/(step_frequency*1e6)
     r = np.linspace(0,r_max,M)
 
     window = np.kaiser(N,9);
