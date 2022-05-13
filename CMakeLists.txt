@@ -7,9 +7,14 @@ set(CMAKE_CXX_COMPILER /usr/bin/g++-9)
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY                ${PROJECT_SOURCE_DIR}/bin/)
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG          ${PROJECT_SOURCE_DIR}/bin/)
 
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
-endif()
+#if(NOT CMAKE_BUILD_TYPE)
+#  set(CMAKE_BUILD_TYPE Release)
+#endif()
+
+set (CMAKE_BUILD_TYPE Debug)
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+
 
 set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
@@ -27,6 +32,8 @@ include_directories (
 
 file (GLOB_RECURSE source RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
+find_package(NumCpp 2.6.2 REQUIRED)
+
 find_package(Threads REQUIRED)
 
 find_package(msgpack REQUIRED)
@@ -41,4 +48,4 @@ add_executable(radar_redis_driver ${PROJECT_SOURCE_DIR}/radar_redis_driver.cpp)
 
 set_target_properties(radar_redis_driver PROPERTIES CXX_STANDARD 17)
 
-target_link_libraries(radar_redis_driver -L/opt/redpitaya/lib -lrp -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} ${SERIAL_LIBRARY} Threads::Threads -lmsgpackc)
+target_link_libraries(radar_redis_driver -L/opt/redpitaya/lib -lrp -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} ${SERIAL_LIBRARY} NumCpp::NumCpp Threads::Threads -lmsgpackc)
