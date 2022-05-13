@@ -1,13 +1,14 @@
 var s = require('net').Socket();
 s.connect({
-  port: 1001, 
-  host: 'radar',
+  port: 1001,
+  host: 'eli-rover.local',
 });
 
-var frequencyCount = 101;
-var sampleCount = 101;
+// ssh -L 1001:radar:1001 johnathan@eli-rover.local
+var frequencyCount = 201;
+var sampleCount = 16384;
 
-var packetSize = 8 + (frequencyCount * sampleCount * 2);
+var packetSize = Uint32Array.BYTES_PER_ELEMENT + (frequencyCount * sampleCount * Float32Array.BYTES_PER_ELEMENT * 2);
 
 function getChunk() {
   var data = s.read(packetSize);
@@ -18,27 +19,36 @@ function getChunk() {
 }
 
 console.log('packet size', packetSize);
-function decodeProfile(data) {
+function decodeProfile(data, channels = 2) {
   var timestamp = data.readUInt32LE();
-  var type      = data.readUInt8(4);
 
-  console.log(timestamp, type);
+  console.log(timestamp, data.length);
 
-  var profileData = new Array(frequencyCount);
-  for(var i = 0; i < frequencyCount; i++) {
-    profileData[i] = [];
-    
-    for(var j = 0; j < sampleCount; j++) {
-      profileData[i].push(data.readUint16LE((i * j * 2) + 8));
+  //return;
+
+  var unpackedData = new Array(channels);
+
+  for(var i = 0; i < channels; i++) {
+    unpackedData[i] = [];
+
+    for(var j = 0; j < frequencyCount; j++) {
+      unpackedData[i][j] = [];
+
+      for(var k = 0; k < sampleCount; k++) {
+        unpackedData[i][j].push(data.readFloatLE((j * k * Float32Array.BYTES_PER_ELEMENT) + Uint32Array.BYTES_PER_ELEMENT));
+      }
     }
   }
 
-  if(profileData.length === frequencyCount && profileData.every(samples => samples.length === sampleCount)) {
-    console.log(timestamp, 'valid profile');
+  console.log(unpackedData[0][0].length);
+
+  if(unpackedData.length === channels &&
+    unpackedData.every(channel => channel.length === frequencyCount && channel.every(sample => sample.length === sampleCount))
+  ) {
+    console.log('valid profile');
   } else {
-    console.log(timestamp, 'invalid profile');
+    console.log('invalid profile');
   }
- 
 }
 
 s.on('readable', getChunk);

@@ -1,34 +1,29 @@
 import ctypes as c
 import numpy as np
 
-class ProfileType():
-  DUT = 0
-  REF = 1
-
-def CreateRadarProfile(num_samples = 101, number_of_frequencies = 101):
+def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_frequencies = 101):
   class RadarProfile(c.LittleEndianStructure):
     _pack_ = 1
     _fields_ = [
       ('timestamp', c.c_uint32),
-      ('type', c.c_int, 4),
-      ('data', c.c_float * (num_samples * number_of_frequencies))
+      ('data', c.c_float * (num_samples * number_of_frequencies * number_of_channels))
     ]
 
-    def getSamplesAtIndex(self, index = 0):
+    def getSamplesAtIndex(self, channel = 0, index = 0):
       d = np.array(self.data)
-      d = d.reshape(number_of_frequencies, num_samples)
-      return d[index]
+      d = d.reshape(number_of_channels, number_of_frequencies, num_samples)
+      return d[channel][index]
 
   return RadarProfile
 
 if __name__ == '__main__':
   import socket
-  
-  RadarProfile = CreateRadarProfile()
+
+  RadarProfile = CreateRadarProfile(2, 16384, 201)
   packet_size = c.sizeof(RadarProfile())
 
   sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  server_address = ('radar', 1001)
+  server_address = ('eli-rover.local', 1001)
 
   sock.connect(server_address)
 
@@ -37,7 +32,6 @@ if __name__ == '__main__':
 
     profile = RadarProfile()
     c.memmove(c.addressof(profile), data, c.sizeof(profile))
-   
+
     print(profile.timestamp)
-    print(profile.type)
     print(len(profile.data))
