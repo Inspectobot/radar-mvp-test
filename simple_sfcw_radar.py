@@ -1,14 +1,22 @@
 import time
 
 import matplotlib.pyplot as plot
+import matplotlib as mpl
 import numpy as np
 
 from radar.signal_processing import LowPassFilter, IQDemodulator
 from radar.digital_backend import RedPitayaSampler
 from radar.rf_source import RFsource
 
+from tile_plots import tile_figures
+
 if __name__ == '__main__':
-    num_samples = 2048
+    mpl.use("Qt5Agg")
+    mpl.rcParams['toolbar'] = 'None'
+    mpl.rcParams["figure.dpi"] = 45
+    mpl.rcParams["figure.autolayout"] = True
+
+    num_samples = 16384
     if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=2e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
@@ -18,7 +26,7 @@ if __name__ == '__main__':
                      intermediate_frequency=20,
                      transmit_power=0,
                      lo_power=15,
-                     port='/dev/cu.usbmodem206834A0z4E561')
+                     port='/dev/ttyACM0')
     synth.connect()
     #synth.set_reference_frequency(10)
     synth.set_frequency()
@@ -35,8 +43,11 @@ if __name__ == '__main__':
 
     time.sleep(1)
 
-    dut = rpi.get_data(channel=1)
-    ref = rpi.get_data(channel=2)
+    dut = rpi.get_data(channel=2)
+    ref = rpi.get_data(channel=1)
+
+    np.savetxt('s-dut_' + '.csv', dut, delimiter=",", newline="\n")
+    np.savetxt('s-ref_' + '.csv', ref, delimiter=",", newline="\n")
 
     #ref_n = ref / np.max(np.abs(ref))
     ref_n = ref
@@ -113,6 +124,8 @@ if __name__ == '__main__':
     plot.grid()
     plot.xlim([0, 10])
     plot.title('Spectrum of base band')
+
+    tile_figures(cols=3, rows=2, screen_rect=(0, 0, 1920, 1080), tile_offsets=(0, 50))
 
     plot.show()
 
