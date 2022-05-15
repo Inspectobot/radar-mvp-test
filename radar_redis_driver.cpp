@@ -53,7 +53,7 @@ int startFrequency   = 1000;
 int stepFrequency    = 10;
 int frequencyCount   = 201;
 
-int intermediateFreq = 20;
+int intermediateFreq = 32;
 int transmitPower    = 0;
 int loPower          = 15;
 uint32_t sampleCount = 16384;
@@ -67,7 +67,7 @@ struct ParametersMessage {
   int startFrequency = 1000;
   int stepFrequency = 10;
   int frequencyCount = 201;
-  int intermediateFreq = 20;
+  int intermediateFreq = 32;
   int transmitPower = 0;
   int loPower = 15;
   uint32_t sampleCount = 16384;
