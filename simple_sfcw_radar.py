@@ -1,49 +1,90 @@
 import time
 
 import matplotlib.pyplot as plot
+import matplotlib as mpl
 import numpy as np
 
 from radar.signal_processing import LowPassFilter, IQDemodulator
 from radar.digital_backend import RedPitayaSampler
 from radar.rf_source import RFsource
 
+from tile_plots import tile_figures
+
+import socket
+import ctypes as c
+
+from radar.client import CreateRadarProfile
+
 if __name__ == '__main__':
-    num_samples = 2048
-    if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=2e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
+    mpl.use("Qt5Agg")
+    mpl.rcParams['toolbar'] = 'None'
+    mpl.rcParams["figure.dpi"] = 45
+    mpl.rcParams["figure.autolayout"] = True
+
+
+    num_samples = 16384
+    number_of_frequencies = 201
+    number_of_channels = 2
+    start_frequency = 1000
+    step_frequency = 10
+    intermediate_frequency = 32
+    transmit_power = 0
+    lo_power = 15
+    if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=2e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
 
-    synth = RFsource(start_frequency=1000,
-                     step_frequency=20,
-                     number_of_frequencies=101,
-                     intermediate_frequency=20,
-                     transmit_power=0,
-                     lo_power=15,
+    synth = RFsource(start_frequency=start_frequency,
+                     step_frequency=step_frequency,
+                     number_of_frequencies=number_of_frequencies,
+                     intermediate_frequency=intermediate_frequency,
+                     transmit_power=transmit_power,
+                     lo_power=lo_power,
                      port='/dev/ttyACM0')
-    synth.connect()
+    #synth.connect()
     #synth.set_reference_frequency(10)
-    synth.set_frequency()
-    synth.set_power()
+    #synth.set_frequency()
+    #synth.set_power()
 
-    synth.enable()
+    #synth.enable()
 
+    RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_address = ('eli-rover.local', 1001)
+
+    sock.connect(server_address)
+    profile = RadarProfile()
+    data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
+    c.memmove(c.addressof(profile), data, c.sizeof(profile))
+
+    print("timestamp is")
+    print(profile.timestamp)
     rpi = RedPitayaSampler(n=num_samples)
-    rpi.connect()
-    rpi.configure_sampler()
-    rpi.start_sampler()
-    time.sleep(1)
-    rpi.trigger_sampler()
+    #rpi.connect()
+    #rpi.configure_sampler()
+    #rpi.start_sampler()
+    #time.sleep(1)
+    #rpi.trigger_sampler()
 
-    time.sleep(1)
+    #time.sleep(1)
 
-    dut = rpi.get_data(channel=1)
-    ref = rpi.get_data(channel=2)
+    dut = profile.getSamplesAtIndex(1, 0)
+    ref = profile.getSamplesAtIndex(0, 0)
+
+    print(dut)
+
+    #np.savetxt('s-dut_' + '.csv', dut, delimiter=",", newline="\n")
+    #np.savetxt('s-ref_' + '.csv', ref, delimiter=",", newline="\n")
+
+    #dut = rpi.get_data(channel=1)
+    #ref = rpi.get_data(channel=2)
 
     #ref_n = ref / np.max(np.abs(ref))
     ref_n = ref
     dut_iq, lo, x_mixer_o = if_filter(dut)
     ref_iq, lo, x_mixer_o = if_filter(ref_n)
 
-    bb_mixer = np.multiply(np.conj(ref_iq)/np.abs(ref), dut_iq)
+    bb_mixer = np.multiply(ref_iq, np.conj(dut_iq))
     bb = bb_filter(bb_mixer)
 
 
@@ -114,7 +155,11 @@ if __name__ == '__main__':
     plot.xlim([0, 10])
     plot.title('Spectrum of base band')
 
+    tile_figures(cols=3, rows=2, screen_rect=(1920, 0, 1920, 1080), tile_offsets=(0, 50))
+
     plot.show()
 
-    rpi.stop_sampler()
-    synth.close()
+    #rpi.stop_sampler()
+    #synth.close()
+
+    tile_figures()
