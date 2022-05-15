@@ -22,10 +22,15 @@
 
 #include <CppLinuxSerial/SerialPort.hpp>
 
-#include "rp.h"
+#include "/opt/redpitaya/include/rp.h"
+#include "/opt/redpitaya/include/rp.h"
+
 #include <sw/redis++/redis++.h>
 
 #include "ringbuffer.hpp"
+
+#define NUMCPP_NO_USE_BOOST 1
+#include "NumCpp.hpp"
 
 #include <thread>
 
@@ -52,7 +57,7 @@ int intermediateFreq = 20;
 int transmitPower    = 0;
 int loPower          = 15;
 uint32_t sampleCount = 16384;
-int settlingTime = 5000;
+int settlingTime = 30000;
 
 static volatile int keepRunning = 1;
 
@@ -66,7 +71,7 @@ struct ParametersMessage {
   int transmitPower = 0;
   int loPower = 15;
   uint32_t sampleCount = 16384;
-  int settlingTime = 5000;
+  int settlingTime = 30000;
 
   MSGPACK_DEFINE_MAP(
     timestamp,
@@ -120,7 +125,11 @@ struct RadarProfile {
   float data[];
 };
 
-void setFrequency(int frequency, int intermediateFrequency) {
+nc::NdArray<float> frequencyRange = nc::linspace<float>(startFrequency, startFrequency + frequencyCount * stepFrequency, frequencyCount);
+
+void setFrequency(float frequency, int intermediateFrequency) {
+  std::cout << "setting frequency: " << std::to_string(float(frequency)) << ", " << std::to_string(float(frequency + intermediateFrequency)) << std::endl;
+
   rfSource->Write("C0");
   rfSource->Write("f" + std::to_string(float(frequency)));
   rfSource->Write("C1");
@@ -152,7 +161,34 @@ void queryFrequency() {
   rfSource->Read(channel0);
 
   std::cout << "Channel 0: " << channel0 << std::endl;
+
+  rfSource->Write("C1");
+  rfSource->Write("f?");
+
+  std::string channel1;
+  rfSource->Read(channel1);
+
+  std::cout << "Channel 1: " << channel1 << std::endl;
 }
+
+void queryPower() {
+  rfSource->Write("C0");
+  rfSource->Write("W?");
+
+  std::string channel0;
+  rfSource->Read(channel0);
+
+  std::cout << "Channel 0 Power: " << channel0 << std::endl;
+
+  rfSource->Write("C1");
+  rfSource->Write("W?");
+
+  std::string channel1;
+  rfSource->Read(channel1);
+
+  std::cout << "Channel 1 Power: " << channel1 << std::endl;
+}
+
 
 void disableExcitation() {
   rfSource->Write("C0");
@@ -312,6 +348,57 @@ void tcpDataServerTask() {
   }
 }
 
+
+int main2 (){
+  if(rp_Init() != RP_OK){
+    fprintf(stderr, "Rp api init failed!\n");
+    return 0;
+  }
+  rp_AcqReset();
+  //rp_AcqSetTriggerDelay(1);         //scope is allready stopped, since program exits with stopped scope
+  //rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
+  uint32_t pos, tr_pos;
+  rp_acq_trig_src_t src = RP_TRIG_SRC_DISABLED;
+  rp_acq_trig_state_t state = RP_TRIG_STATE_TRIGGERED;
+  int k = 3;
+  while(k>0){
+    usleep(10);
+    --k;
+    rp_AcqGetWritePointerAtTrig(&tr_pos);
+    rp_AcqGetWritePointer(&pos);
+    rp_AcqGetTriggerSrc(&src);
+    rp_AcqGetTriggerState(&state);
+    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
+  }
+  rp_AcqSetTriggerDelay(ADC_BUFFER_SIZE/2.0);
+  printf("start\n");
+  rp_AcqStart();
+  k=3;
+  while(k>0){
+    usleep(10);
+    --k;
+    rp_AcqGetWritePointerAtTrig(&tr_pos);
+    rp_AcqGetWritePointer(&pos);
+    rp_AcqGetTriggerSrc(&src);
+    rp_AcqGetTriggerState(&state);
+    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
+  }
+  printf("trigger\n");
+  rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
+  k=133;
+  while(k>0){
+    usleep(1);
+    --k;
+    rp_AcqGetWritePointerAtTrig(&tr_pos);
+    rp_AcqGetWritePointer(&pos);
+    rp_AcqGetTriggerSrc(&src);
+    rp_AcqGetTriggerState(&state);
+    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
+  }
+  //scope is not acquiring samples to buffer anymore ->'stopped'
+  rp_Release();
+}
+
 int main (int argc, char **argv) {
   signal(SIGABRT, intHandler);
   signal(SIGTERM, intHandler);
@@ -324,6 +411,8 @@ int main (int argc, char **argv) {
   redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5); 
   
   redis = new Redis(redisConnectionOpts);
+
+  frequencyRange.print();
 
   auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
   if(timestamp) {
@@ -385,23 +474,25 @@ int main (int argc, char **argv) {
     exit(0);
   }
 
+  rp_InitReset(true);
   rp_DpinReset();
   rp_AcqReset();
   rp_AcqSetTriggerDelay(0);
 
-  rp_acq_decimation_t adc_precision = RP_DEC_1;
-  rp_acq_sampling_rate_t sampling_rate = RP_SMP_122_880M; 
+  rp_AcqSetSamplingRate(RP_SMP_122_880M);
+  rp_AcqSetDecimation(RP_DEC_1);
 
-  rp_AcqSetSamplingRate(sampling_rate);
-  rp_AcqSetDecimation(adc_precision);
-
+  uint32_t decimation = 1;
+  //rp_AcqSetDecimationFactor(&decimation);
   rp_dpin_t stepPin = RP_DIO5_N;
   rp_pinDirection_t direction = RP_OUT;
 
   rp_DpinSetDirection(stepPin, direction);
   rp_DpinSetState(stepPin, RP_LOW);
-
+  
   long long int sampleTimeInMicro = ((1 / ADC_SAMPLE_RATE) * sampleCount * 1000000);
+
+  std::cout << "ADC sample rate: " << ADC_SAMPLE_RATE << std::endl;
 
   std::cout << "sample time in micro: " << sampleTimeInMicro << std::endl;
 
@@ -409,7 +500,7 @@ int main (int argc, char **argv) {
   rfSource->SetTimeout(100);
   rfSource->Open();
 
-  setFrequency(startFrequency, intermediateFreq);
+  setFrequency(frequencyRange[0], intermediateFreq);
   //setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, (settlingTime / 1000) + (sampleTimeInMicro / 1000));
 
   enableExcitation(transmitPower, loPower);
@@ -429,32 +520,92 @@ int main (int argc, char **argv) {
 
     profileBuffers[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
 
+    std::cout << "timestamp is: " << profileBuffers[currentBufferIndex]->timestamp << std::endl;
+    
+    setFrequency(frequencyRange[0], intermediateFreq);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     for(int i = 0; i < frequencyCount; i++) {
-      setFrequency(startFrequency + (i * stepFrequency), intermediateFreq);
-      std::this_thread::sleep_for(std::chrono::microseconds(settlingTime));
+      if(i > 0) {
+        setFrequency(frequencyRange[i], intermediateFreq);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      }
 
       queryFrequency();
+      queryPower();
 
       //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
       
-      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-
-      bool fillState = false;
       rp_AcqStart();
+      usleep(200);
+      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
+       
+     /* rp_acq_trig_src_t source;
 
-      std::this_thread::sleep_for(std::chrono::microseconds(sampleTimeInMicro));
-    
-      while(!fillState) {
-        rp_AcqGetBufferFillState(&fillState);
-      }
+      while(1) {
+        rp_AcqGetTriggerSrc(&source);
 
-      rp_AcqStop();
+        if(source == RP_TRIG_SRC_DISABLED){
+          break;
+        }
+      }*/
+
+       bool fillState = false;
+
+        while(!fillState) {
+          rp_AcqGetBufferFillState(&fillState);
+        }
       
-      rp_AcqGetDataV2(0, 
+      rp_AcqStop();
+      uint32_t tr_pos;
+
+      rp_AcqGetWritePointerAtTrig(&tr_pos);
+
+      //uint32_t stopPos;
+      //rp_AcqGetWritePointer(&stopPos);
+
+      //std::cout << "starting pos: " << startPos << " stop pos: " << stopPos << " length: " << (stopPos - startPos) << std::endl;
+      
+      //uint32_t size;
+      //rp_AcqGetBufSize(&size);
+
+      //std::cout << "size is: " << size << std::endl;
+
+      int idx0 = i * sampleCount;
+      int idx1 = (sampleCount * frequencyCount) + idx0;
+
+      //std::cout << "idx0: " << idx0 << " idx1: " << idx1 << std::endl;
+     // rp_AcqGetOldestDataV(RP_CH_1, &size, &((profileBuffers[currentBufferIndex]->data)[idx0]));
+   //   rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, &((profileBuffers[currentBufferIndex]->data)[idx1]));
+
+
+     //float buffer1[size];
+     //float buffer2[size];
+     // rp_AcqGetDataPosV(RP_CH_1, startPos, stopPos, &((profileBuffers[currentBufferIndex]->data)[idx0]), &sampleCount);
+     // rp_AcqGetDataPosV(RP_CH_2, startPos, stopPos, &((profileBuffers[currentBufferIndex]->data)[idx1]), &sampleCount);
+      //rp_AcqGetOldestDataV(RP_CH_1, &size, buffer1);
+      //rp_AcqGetOldestDataV(RP_CH_2, &size, buffer2);
+
+      /*for(uint32_t i = 0; i < size; i++) {
+        std::cout << "1: " << buffer1[i] << std::endl;
+        std::cout << "2: " << buffer2[i] << std::endl;
+      }*/
+
+     /* rp_AcqGetDataV2(tr_pos, 
         &sampleCount,
         &profileBuffers[currentBufferIndex]->data[i * sampleCount],
         &profileBuffers[currentBufferIndex]->data[(sampleCount * frequencyCount) + (i * sampleCount)]);
-      
+*/
+
+      rp_AcqGetOldestDataV(RP_CH_1, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx0]);
+      rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx1]);
+
+      if(i == 0) {
+        printf("insert\n");
+        profileBuffer.insert(&profileBuffers[currentBufferIndex]);
+        sleep(100000);
+      }
+         
       //rp_DpinSetState(stepPin, RP_HIGH);
       //rp_DpinSetState(stepPin, RP_LOW);
       
