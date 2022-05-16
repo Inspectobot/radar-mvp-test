@@ -22,8 +22,12 @@
 
 #include <CppLinuxSerial/SerialPort.hpp>
 
-#include "/opt/redpitaya/include/rp.h"
-#include "/opt/redpitaya/include/rp.h"
+#define Z20 1
+#include "rp_cross.h"
+
+extern "C" {
+  #include "oscilloscope.h"
+}
 
 #include <sw/redis++/redis++.h>
 
@@ -348,57 +352,6 @@ void tcpDataServerTask() {
   }
 }
 
-
-int main2 (){
-  if(rp_Init() != RP_OK){
-    fprintf(stderr, "Rp api init failed!\n");
-    return 0;
-  }
-  rp_AcqReset();
-  //rp_AcqSetTriggerDelay(1);         //scope is allready stopped, since program exits with stopped scope
-  //rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-  uint32_t pos, tr_pos;
-  rp_acq_trig_src_t src = RP_TRIG_SRC_DISABLED;
-  rp_acq_trig_state_t state = RP_TRIG_STATE_TRIGGERED;
-  int k = 3;
-  while(k>0){
-    usleep(10);
-    --k;
-    rp_AcqGetWritePointerAtTrig(&tr_pos);
-    rp_AcqGetWritePointer(&pos);
-    rp_AcqGetTriggerSrc(&src);
-    rp_AcqGetTriggerState(&state);
-    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
-  }
-  rp_AcqSetTriggerDelay(ADC_BUFFER_SIZE/2.0);
-  printf("start\n");
-  rp_AcqStart();
-  k=3;
-  while(k>0){
-    usleep(10);
-    --k;
-    rp_AcqGetWritePointerAtTrig(&tr_pos);
-    rp_AcqGetWritePointer(&pos);
-    rp_AcqGetTriggerSrc(&src);
-    rp_AcqGetTriggerState(&state);
-    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
-  }
-  printf("trigger\n");
-  rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-  k=133;
-  while(k>0){
-    usleep(1);
-    --k;
-    rp_AcqGetWritePointerAtTrig(&tr_pos);
-    rp_AcqGetWritePointer(&pos);
-    rp_AcqGetTriggerSrc(&src);
-    rp_AcqGetTriggerState(&state);
-    printf("pos: %d; pos when triggered: %d; trigger source: %d; trigger state: %d\n",pos, tr_pos, src, state);
-  }
-  //scope is not acquiring samples to buffer anymore ->'stopped'
-  rp_Release();
-}
-
 int main (int argc, char **argv) {
   signal(SIGABRT, intHandler);
   signal(SIGTERM, intHandler);
@@ -477,7 +430,12 @@ int main (int argc, char **argv) {
   rp_InitReset(true);
   rp_DpinReset();
   rp_AcqReset();
+
+  // needed to set internal flag `triggerDelayInNs = false`
   rp_AcqSetTriggerDelay(0);
+  osc_SetTriggerDelay(sampleCount);  
+  
+  //osc_SetTriggerDelay(sampleCount);
 
   rp_AcqSetSamplingRate(RP_SMP_122_880M);
   rp_AcqSetDecimation(RP_DEC_1);
@@ -537,39 +495,21 @@ int main (int argc, char **argv) {
       //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
       
       rp_AcqStart();
-      usleep(200);
+      
+      std::this_thread::sleep_for(std::chrono::microseconds(sampleTimeInMicro));
+
       rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
        
-     /* rp_acq_trig_src_t source;
+      bool fillState = false;
 
-      while(1) {
-        rp_AcqGetTriggerSrc(&source);
-
-        if(source == RP_TRIG_SRC_DISABLED){
-          break;
-        }
-      }*/
-
-       bool fillState = false;
-
-        while(!fillState) {
+      while(!fillState) {
           rp_AcqGetBufferFillState(&fillState);
         }
       
       rp_AcqStop();
-      uint32_t tr_pos;
-
-      rp_AcqGetWritePointerAtTrig(&tr_pos);
-
-      //uint32_t stopPos;
-      //rp_AcqGetWritePointer(&stopPos);
-
-      //std::cout << "starting pos: " << startPos << " stop pos: " << stopPos << " length: " << (stopPos - startPos) << std::endl;
       
-      //uint32_t size;
-      //rp_AcqGetBufSize(&size);
-
-      //std::cout << "size is: " << size << std::endl;
+      uint32_t tr_pos;
+      rp_AcqGetWritePointerAtTrig(&tr_pos);
 
       int idx0 = i * sampleCount;
       int idx1 = (sampleCount * frequencyCount) + idx0;
@@ -591,14 +531,13 @@ int main (int argc, char **argv) {
         std::cout << "2: " << buffer2[i] << std::endl;
       }*/
 
-     /* rp_AcqGetDataV2(tr_pos, 
+     rp_AcqGetDataV2(tr_pos,
         &sampleCount,
         &profileBuffers[currentBufferIndex]->data[i * sampleCount],
         &profileBuffers[currentBufferIndex]->data[(sampleCount * frequencyCount) + (i * sampleCount)]);
-*/
 
-      rp_AcqGetOldestDataV(RP_CH_1, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx0]);
-      rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx1]);
+     // rp_AcqGetOldestDataV(RP_CH_1, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx0]);
+     // rp_AcqGetOldestDataV(RP_CH_2, &sampleCount, &(profileBuffers[currentBufferIndex]->data)[idx1]);
 
       if(i == 0) {
         printf("insert\n");

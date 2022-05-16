@@ -1,0 +1,3 @@
+[submodule "external/RedPitaya"]
+	path = external/RedPitaya
+	url = git@github.com:Inspectobot/RedPitaya.git
