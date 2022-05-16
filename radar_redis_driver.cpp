@@ -53,14 +53,14 @@ const string PARAMETERS_KEY = "radar_parameters";
 
 int64_t startupTimestamp;
 
-int startFrequency   = 1000;
-int stepFrequency    = 10;
+float startFrequency   = 1000.00;
+float stepFrequency    = 10.00;
 int frequencyCount   = 201;
 
-int intermediateFreq = 32;
-int transmitPower    = 0;
-int loPower          = 15;
-uint32_t sampleCount = 16384;
+float intermediateFreq = 32.00;
+float transmitPower    = 0.00;
+float loPower          = 15.00;
+uint32_t sampleCount = 2048;
 int settlingTime = 30000;
 
 static volatile int keepRunning = 1;
@@ -68,13 +68,13 @@ static volatile int keepRunning = 1;
 struct ParametersMessage {
   uint32_t timestamp = 0;
 
-  int startFrequency = 1000;
-  int stepFrequency = 10;
+  float startFrequency = 1000.00;
+  float stepFrequency = 10.00;
   int frequencyCount = 201;
-  int intermediateFreq = 32;
-  int transmitPower = 0;
-  int loPower = 15;
-  uint32_t sampleCount = 16384;
+  float intermediateFreq = 32.00;
+  float transmitPower = 0.00;
+  float loPower = 15.00;
+  uint32_t sampleCount = 2048;
   int settlingTime = 30000;
 
   MSGPACK_DEFINE_MAP(
@@ -229,6 +229,35 @@ void setupSweep(
 
   rfSource->Write("C0");
   
+  std::stringstream sweepTableSs;
+  
+  sweepTableSs << "Ld";
+
+  for(int i = 0; i < (frequencyCount * 2); i++) {
+    int j = i;
+
+    if(i > (frequencyCount - 1)) {
+      j = (frequencyCount - 1) - (i - frequencyCount);
+      j--;
+      if(j == 0) break;
+    }
+
+    sweepTableSs
+      << "L" 
+      << std::to_string(i) 
+      << "f" << std::fixed << std::setprecision(7) << frequencyRange[j]
+      << "L"
+      << std::to_string(i)
+      << "a" << std::fixed << std::setprecision(2) << transmitPower;
+  }
+
+  std::string sweepTableStr = sweepTableSs.str();
+
+  std::cout << sweepTableStr << std::endl;
+
+  rfSource->Write(sweepTableStr);
+
+  /*
   rfSource->Write("w2");
 
   rfSource->Write("l" + std::to_string(startFrequency));
@@ -254,7 +283,7 @@ void setupSweep(
 
   rfSource->Write("^1");
 
-  //rfSource->Write("c0");
+  //rfSource->Write("c0");*/
 }
 
 void runContinuousSweep() {
@@ -459,7 +488,7 @@ int main (int argc, char **argv) {
   rfSource->Open();
 
   setFrequency(frequencyRange[0], intermediateFreq);
-  //setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, (settlingTime / 1000) + (sampleTimeInMicro / 1000));
+  setupSweep(startFrequency, stepFrequency, frequencyCount, intermediateFreq, (settlingTime / 1000) + (sampleTimeInMicro / 1000));
 
   enableExcitation(transmitPower, loPower);
  
