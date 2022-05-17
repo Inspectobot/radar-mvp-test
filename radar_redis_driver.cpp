@@ -554,8 +554,8 @@ int main (int argc, char **argv) {
 
       rp_AcqGetDataV2(bufferTriggerPosition,
         &sampleCount,
-        &profileBuffers[currentBufferIndex]->data[i * sampleCount],
-        &profileBuffers[currentBufferIndex]->data[(sampleCount * frequencyCount) + (i * sampleCount)]);
+        &profileBuffers[currentBufferIndex]->data[idx0],
+        &profileBuffers[currentBufferIndex]->data[idx1]);
 
       /*if(i == 0) {
         printf("insert\n");
