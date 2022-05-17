@@ -61,7 +61,7 @@ float intermediateFreq = 32.00;
 float transmitPower    = 0.00;
 float loPower          = 15.00;
 uint32_t sampleCount = 2048;
-int settlingTimeInMicro = 500;
+int settlingTimeInMicro = 500000;
 int sampleTimeInMicro = 133;
 int stepTriggerTimeInMicro = 5;
 
@@ -77,7 +77,7 @@ struct ParametersMessage {
   float transmitPower = 0.00;
   float loPower = 15.00;
   uint32_t sampleCount = 2048;
-  int settlingTimeInMicro = 500;
+  int settlingTimeInMicro = 200000;
   int stepTriggerTimeInMicro = 5;
 
   MSGPACK_DEFINE_MAP(
@@ -247,8 +247,6 @@ void setupSweep(
 
     if(i > (frequencyCount - 1)) {
       j = (frequencyCount - 1) - (i - frequencyCount);
-      j--;
-      if(j == 0) break;
     }
 
     sweepTableSs
@@ -501,6 +499,9 @@ int main (int argc, char **argv) {
   
   int currentBufferIndex = 0;
   bool sweepDirectionUp = true;
+  
+  setFrequency(frequencyRange[0], intermediateFreq);
+  std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
 
   while(keepRunning) {
     int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
@@ -511,27 +512,18 @@ int main (int argc, char **argv) {
 
     std::cout << "timestamp is: " << profileBuffers[currentBufferIndex]->timestamp << std::endl;
     
-    setFrequency(frequencyRange[0], intermediateFreq);
-    std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
-
     for(int i = 0; i < frequencyCount; i++) {
+      //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
       rp_DpinSetState(stepPin, RP_HIGH);
       std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
       rp_DpinSetState(stepPin, RP_LOW);
 
       std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
 
-      //queryFrequency();
-      //queryPower();
+      queryFrequency();
+      queryPower();
 
-      //setFrequency(frequencyRange[i], intermediateFreq);
-      //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-      
-      //queryFrequency();
-      //queryPower();
-
-      //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-      
       rp_AcqStart();
       
       std::this_thread::sleep_for(std::chrono::microseconds(sampleTimeInMicro));
@@ -546,31 +538,32 @@ int main (int argc, char **argv) {
       
       rp_AcqStop();
       
-      uint32_t tr_pos;
-      rp_AcqGetWritePointerAtTrig(&tr_pos);
+      uint32_t bufferTriggerPosition;
+      rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
       
+      int idx0, idx1; 
       if(sweepDirectionUp) {
-        int idx0 = i * sampleCount;
-        int idx1 = (sampleCount * frequencyCount) + idx0;
+        idx0 = i * sampleCount;
+        idx1 = (sampleCount * frequencyCount) + idx0;
       } else {
-        // TODO
+        idx0 = ((frequencyCount - 1) - i) * sampleCount;
+        idx1 = (sampleCount * frequencyCount) + idx0;
       }
 
-      rp_AcqGetDataV2(tr_pos,
+      //std::cout << (sweepDirectionUp ? "sweep up " : "sweep down ") << " indexes: " << idx0 << ", " << idx1 << std::endl;
+
+      rp_AcqGetDataV2(bufferTriggerPosition,
         &sampleCount,
         &profileBuffers[currentBufferIndex]->data[i * sampleCount],
         &profileBuffers[currentBufferIndex]->data[(sampleCount * frequencyCount) + (i * sampleCount)]);
 
-      if(i == 0) {
+      /*if(i == 0) {
         printf("insert\n");
         profileBuffer.insert(&profileBuffers[currentBufferIndex]);
         sleep(100000);
-      }
+      }*/
          
-      //queryFrequency();
-
       //int64_t endSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-      //sampleTimes[i] = (endSampleTimeMicro - startSampleTimeMicro);*/
     }
 
     profileBuffer.insert(&profileBuffers[currentBufferIndex]);
