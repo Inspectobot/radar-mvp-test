@@ -33,11 +33,15 @@ message(STATUS "include dir: ${RP_API_SOURCE_DIR}")
 
 #add_subdirectory("${RP_API_SOURCE_DIR}")
 
+find_package(PkgConfig)
+pkg_check_modules(SERIAL libserial)
+
 include_directories (
   ${RP_API_SOURCE_DIR}/include
   ${RP_API_SOURCE_DIR}/src/hw
   ${RP_API_SOURCE_DIR}/src/kiss_fft
   ${RP_API_SOURCE_DIR}/src
+  ${SERIAL_INCLUDE_DIRS}
 #  /opt/redpitaya/include
 #  /usr/src/RedPitaya/api/src
 )
@@ -80,4 +84,5 @@ add_executable(radar_redis_driver
 
 set_target_properties(radar_redis_driver PROPERTIES CXX_STANDARD 17)
 
-target_link_libraries(radar_redis_driver -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} ${SERIAL_LIBRARY} NumCpp::NumCpp Threads::Threads -lmsgpackc)
+target_include_directories(radar_redis_driver PRIVATE ${SERIAL_INCLUDE_DIRS})
+target_link_libraries(radar_redis_driver -lm -ludev -lpthread ${HIREDIS_LIBRARY} ${REDIS_PLUS_PLUS_LIB} ${SERIAL_LDFLAGS} ${SERIAL_LIBRARY} NumCpp::NumCpp Threads::Threads -lmsgpackc)
