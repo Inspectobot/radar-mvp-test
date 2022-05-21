@@ -20,8 +20,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-//#include <CppLinuxSerial/SerialPort.hpp>
-
 #include <libserial/SerialPort.h>
 #include <libserial/SerialStream.h>
 
@@ -51,8 +49,35 @@ using namespace std::chrono;
 
 using namespace std;
 using namespace sw::redis;
-//using namespace mn::CppLinuxSerial;
 using namespace LibSerial;
+
+#define DEBUG_SYNTH_SERIAL 0
+class SynthSerialPort : public SerialPort {
+  public:
+    std::string SendCommand(const std::string& dataString, int responseLineCount = 10) {
+      if(DEBUG_SYNTH_SERIAL) std::cout << "Wrote command: " << dataString << std::endl;
+
+      SerialPort::Write(dataString + ";\r");
+      SerialPort::DrainWriteBuffer();
+            
+      std::stringstream ss;
+
+      while(responseLineCount > 0) {
+        responseLineCount--;
+
+        try {
+          
+          std::string responseLine;
+          SerialPort::ReadLine(responseLine, '\r', 1);
+          if(DEBUG_SYNTH_SERIAL) std::cout << "Response: " << responseLine << endl;
+          ss << responseLine;
+
+        } catch(ReadTimeout&) {}
+      }
+
+      return ss.str();
+    }
+};
 
 const string STARTUP_TIMESTAMP_KEY ="rover_startup_timestamp";
 const string PARAMETERS_KEY = "radar_parameters";
@@ -143,96 +168,91 @@ struct RadarProfile {
   float data[];
 };
 
-void setFrequency(SerialPort& rfSource, float frequency, int intermediateFrequency) {
-  //std::cout << "setting frequency: " << std::to_string(float(frequency)) << ", " << std::to_string(float(frequency + intermediateFrequency)) << std::endl;
+void setFrequency(SynthSerialPort& rfSource, float frequency, float intermediateFreq) {
+  std::cout << "setting frequency: " << std::to_string(float(frequency)) << ", " << std::to_string(float(frequency + intermediateFreq)) << std::endl;
 
-  rfSource.Write("C0");
-  rfSource.Write("f" + std::to_string(float(frequency)));
-  rfSource.Write("C1");
-  rfSource.Write("f" + std::to_string(float(frequency + intermediateFrequency)));
+  rfSource.SendCommand("Source 1");
+  std::stringstream source1FreqSs;
+  source1FreqSs << std::fixed << std::setprecision(6) << frequency;
+  rfSource.SendCommand("Frequency " + source1FreqSs.str() + " M");
 
-  rfSource.Write("C0");
+  rfSource.SendCommand("Source 2");
+  std::stringstream source2FreqSs;
+  source2FreqSs << std::fixed << std::setprecision(6) << (frequency + intermediateFreq);
+  rfSource.SendCommand("Frequency " + source2FreqSs.str() + " M");
 
-  rfSource.DrainWriteBuffer();
-  rfSource.FlushOutputBuffer();
+  rfSource.SendCommand("Source 1");
 }
 
-void enableExcitation(SerialPort& rfSource, int transmitPower, int loPower) {
-  rfSource.Write("C0");
-  rfSource.Write("W" + std::to_string(float(transmitPower)));
-  rfSource.Write("C1");
-  rfSource.Write("W" + std::to_string(float(loPower)));
+void enableExcitation(SynthSerialPort& rfSource, int transmitPower, int loPower) {
+  float transmitAtten = 15.0 - transmitPower;
+  float loAtten = 15 - loPower;
 
-  rfSource.Write("C0");
-
-  rfSource.Write("E1");
-  rfSource.Write("r1");
-
-  rfSource.Write("C1");
-
-  rfSource.Write("E1");
-  rfSource.Write("r1");
-
-  rfSource.Write("C0");
-
-  rfSource.DrainWriteBuffer();
-  rfSource.FlushOutputBuffer();
-}
-
-/*void queryFrequency() {
-  rfSource.Write("C0");
-  rfSource.Write("f?");
-
-  std::string channel0;
-  rfSource.Read(channel0);
-
-  std::cout << "Channel 0: " << channel0 << std::endl;
-  rfSource.Read(channel0);
-
-  rfSource.Write("C1");
-  rfSource.Write("f?");
-
-  std::string channel1;
-  rfSource.Read(channel1);
-
-  std::cout << "Channel 1: " << channel1 << std::endl;
-
-  rfSource.Write("C0");
-}
-
-void queryPower() {
-  rfSource.Write("C0");
-  rfSource.Write("W?");
-
-  std::string channel0;
-  rfSource.Read(channel0);
-
-  std::cout << "Channel 0 Power: " << channel0 << std::endl;
-
-  rfSource.Write("C1");
-  rfSource.Write("W?");
-
-  std::string channel1;
-  rfSource.Read(channel1);
-
-  std::cout << "Channel 1 Power: " << channel1 << std::endl;
+  transmitAtten = transmitAtten > 0.0 ? transmitAtten : 0.0;
+  loAtten = loAtten > 0.0 ? loAtten : 0.0;
   
-  rfSource.Write("C0");
-}*/
+  rfSource.SendCommand("Source 1");
+ 
+  std::stringstream transmitPowerSs;
+  transmitPowerSs << std::fixed << std::setprecision(2) << transmitAtten;
+
+  rfSource.SendCommand("ATTenuator " + transmitPowerSs.str());  
+   
+  rfSource.SendCommand("oen 1");
+  rfSource.SendCommand("pdn 1");
+
+  rfSource.SendCommand("Source 2");
+  
+  std::stringstream loPowerSs;
+  loPowerSs << std::fixed << std::setprecision(2) << loAtten;
+
+  rfSource.SendCommand("ATTenuator " + loPowerSs.str());  
+  
+  rfSource.SendCommand("oen 1");
+  rfSource.SendCommand("pdn 1");
+
+  rfSource.SendCommand("Source 1");
+}
+
+void queryFrequency(SynthSerialPort& rfSource) {
+  rfSource.SendCommand("Source 1");
+  std::string channel0 = rfSource.SendCommand("Frequency?");
+
+  std::cout << "Channel 0 Frequency: " << channel0 << std::endl;
+
+  rfSource.SendCommand("Source 2");
+  std::string channel1 = rfSource.SendCommand("Frequency?");
+
+  std::cout << "Channel 1 Frequency: " << channel1 << std::endl;
+
+  rfSource.SendCommand("Source 1");
+}
+
+void queryPower(SynthSerialPort& rfSource) {
+  rfSource.SendCommand("Source 1");
+  std::string channel0 = rfSource.SendCommand("ATTenuator?");
+
+  std::cout << "Channel 0 Attenutation (power +15 dbM): " << channel0 << std::endl;
+
+  rfSource.SendCommand("Source 2");
+  std::string channel1 = rfSource.SendCommand("ATTenuator?");
+
+  std::cout << "Channel 1 Attenutation (power +15 dbM): " << channel1 << std::endl;
+  
+  rfSource.SendCommand("Source 1");
+}
 
 
-void disableExcitation(SerialPort& rfSource) {
-  rfSource.Write("C0");
+void disableExcitation(SynthSerialPort& rfSource) {
+  rfSource.SendCommand("Source 1");
+  rfSource.SendCommand("oen 0");
+  rfSource.SendCommand("pdn 0");
 
-  rfSource.Write("E0");
-  rfSource.Write("r0");
+  rfSource.SendCommand("Source 2");
+  rfSource.SendCommand("oen 0");
+  rfSource.SendCommand("pdn 0");
 
-  rfSource.Write("C1");
-
-  rfSource.Write("E0");
-  rfSource.Write("r0");
-
-  rfSource.DrainWriteBuffer();
+  rfSource.SendCommand("Source 1");
 }
 
 void intHandler(int dummy) {
@@ -247,80 +267,113 @@ void intHandler(int dummy) {
 	keepRunning = 0;
 }
 
-/*void setupSweep(
+void setupSweep(
+  SynthSerialPort& rfSource,
+  float startFrequency,
+  float stepFrequency,
+  int frequencyCount,
+  float intermediateFreq,
+  float stepTimeInMs) {
+
+  std::cout << "Step time in ms: " << stepTimeInMs << std::endl;
+  
+  rfSource.SendCommand("Source 1");
+  rfSource.SendCommand("Mode SWEEP");
+
+  std::stringstream rateInMsSs;
+  rateInMsSs << std::fixed << std::setprecision(3) << stepTimeInMs;
+  rfSource.SendCommand("RATE " + rateInMsSs.str());
+
+  rfSource.SendCommand("TMODE EXTSTEP");
+
+  std::stringstream startFreqSs;
+  startFreqSs << std::fixed << std::setprecision(6) << startFrequency;
+  rfSource.SendCommand("START " + startFreqSs.str());
+
+  std::stringstream stopFreqSs;
+  stopFreqSs << std::fixed << std::setprecision(6) << (startFrequency + (stepFrequency * (frequencyCount - 1)));
+  rfSource.SendCommand("STOP " + stopFreqSs.str());
+
+  std::stringstream stepFreqSs;
+  stepFreqSs << std::fixed << std::setprecision(6) << stepFrequency;
+  rfSource.SendCommand("STEP " + stepFreqSs.str() + " MHz");
+
+  std::cout << "Step frequency: " << stepFreqSs.str() << std::endl;
+
+  rfSource.SendCommand("Source 2");
+  rfSource.SendCommand("Mode SWEEP");
+
+  std::stringstream rateInMsSs2;
+  rateInMsSs2 << std::fixed << std::setprecision(3) << stepTimeInMs;
+  rfSource.SendCommand("RATE " + rateInMsSs2.str());
+
+  rfSource.SendCommand("TMODE EXTSTEP");
+
+  std::stringstream startFreqSs2;
+  startFreqSs2 << std::fixed << std::setprecision(6) << (startFrequency + intermediateFreq);
+  rfSource.SendCommand("START " + startFreqSs2.str());
+
+  std::stringstream stopFreqSs2;
+  stopFreqSs2 << std::fixed << std::setprecision(6) << (startFrequency + intermediateFreq) + (stepFrequency * (frequencyCount - 1));
+  rfSource.SendCommand("STOP " + stopFreqSs2.str());
+
+  std::stringstream stepFreqSs2;
+  stepFreqSs2 << std::fixed << std::setprecision(6) << stepFrequency;
+  rfSource.SendCommand("STEP " + stepFreqSs2.str() + " MHz");
+
+  rfSource.SendCommand("Source 1");
+}
+
+void setupSweepTable(
+    SynthSerialPort& rfSource,
     nc::NdArray<float> sweepRange,
     float intermediateFrequency,
     float stepTimeInMs) {
 
   std::cout << "Step time in ms: " << stepTimeInMs << std::endl;
 
-  rfSource.Write("C0");
-  
-  std::stringstream sweepTableSs;
-  
-  sweepTableSs << "Ld";
-
   int frequencyCount = sweepRange.size();
 
-  for(int i = 0; i < (frequencyCount * 2); i++) {
-    int j = i;
+  for(int c = 0; c < CHANNEL_COUNT; c++) {
+    
+    rfSource.SendCommand("Source " + std::to_string(c + 1));
+    rfSource.SendCommand("Mode LIST");
+    
+    std::stringstream rateInMsSs;
+    rateInMsSs << std::fixed << std::setprecision(1);
+    rfSource.SendCommand("RATE " + rateInMsSs.str());
 
-    if(i > (frequencyCount - 1)) {
-      j = (frequencyCount - 1) - (i - frequencyCount);
+    rfSource.SendCommand("TMODE EXTSTEP");
+
+    float transmitAtten = 15.0 - transmitPower;
+    float loAtten = 15.0 - loPower;
+
+    int listIndex = 0;
+    for(int i = 0; i < (frequencyCount * 2); i++) {
+      
+      listIndex++;
+
+      int j = i;
+
+      if(i > (frequencyCount - 1)) {
+        j = (frequencyCount - 1) - (i - frequencyCount);
+      }
+      
+      std::stringstream sweepTableEntry;
+
+      sweepTableEntry
+        << "List"
+        << " " 
+        << std::to_string(listIndex) 
+        << " "
+        << std::fixed << std::setprecision(6) << sweepRange[j] + (c == 1 ? intermediateFrequency : 0.0)
+        << " "
+        << std::fixed << std::setprecision(1) << (c == 0 ? transmitAtten : loAtten);
+
+      rfSource.SendCommand(sweepTableEntry.str());    
     }
-
-    sweepTableSs
-      << "L" 
-      << std::to_string(i) 
-      << "f" << std::fixed << std::setprecision(7) << sweepRange[j]
-      << "L"
-      << std::to_string(i)
-      << "a" << std::fixed << std::setprecision(2) << transmitPower;
   }
-
-  std::string sweepTableStr = sweepTableSs.str();
-
-  std::cout << sweepTableStr << std::endl;
-
-  rfSource.Write(sweepTableStr);
-
-  // Enable trigger: (0=software, 1=sweep, 2=step, 3=hold all, ..)
-  rfSource.Write("w1");
-
-  // Sweep step time (mS)
-  rfSource.Write("t" + std::to_string(stepTimeInMs));
-
-  std::stringstream ifSs;
-
-  ifSs << std::fixed << std::setprecision(7) << intermediateFrequency;
-  
-  // Sweep differential seperation (MHz)
-  rfSource.Write("k" + ifSs.str());
-
-  // Trigger polarity high
-  rfSource.Write("Y1");
-  
-  // Sweep differential: (0=off, 1=ChA-DiffFreq, 2=ChA+DiffFreq)
-  rfSource.Write("n2");
-
-  // Sweep type (lin=0 / tab=1 / %=2)
-  rfSource.Write("X1");
-
-  rfSource.Write("C0");
-}*/
-
-/*void runContinuousSweep() {
-  rfSource.Write("C0");
-  
-  rfSource.Write("c1");
-  rfSource.Write("g1");
 }
-
-void runSingleSweep() {
-  rfSource.Write("C0");
-
-  rfSource.Write("g1");
-}*/
 
 jnk0le::Ringbuffer<RadarProfile*, 4> profileBuffer;
 struct RadarProfile* profileBuffers[PROFILE_BUFFER_SIZE];
@@ -517,35 +570,39 @@ int main (int argc, char **argv) {
   std::cout << "sample time in micro: " << sampleTimeInMicro << std::endl;
   std::cout << "settling time in micro: " << settlingTimeInMicro << std::endl;
 
-  SerialPort rfSource;
-  rfSource.Open("/dev/ttyACM0");
-  rfSource.SetBaudRate(BaudRate::BAUD_921600);
+  SynthSerialPort rfSource;
+  rfSource.Open("/dev/ttyUSB0");
+  rfSource.SetBaudRate(BaudRate::BAUD_115200);
   rfSource.SetFlowControl(FlowControl::FLOW_CONTROL_NONE);
   rfSource.SetParity(Parity::PARITY_NONE);
   rfSource.SetStopBits(StopBits::STOP_BITS_1);
+  rfSource.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
 
   sleep(2);
   tcflush(rfSource.GetFileDescriptor(),TCIOFLUSH);
+
+  rfSource.SendCommand("RST");
 
   //setFrequency(frequencyRange[0], intermediateFreq);
   
   /*std::cout << "before sweep setup:" << std::endl;
   enableExcitation(transmitPower, loPower);
-  queryFrequency();
-  queryPower();*/
+  queryFrequency(rfSource);
+  queryPower(rfSource);*/
   
   enableExcitation(rfSource, transmitPower, loPower);
   std::cout << "Warming up RF PLL..." << std::endl;
   setFrequency(rfSource, frequencyRange[0], intermediateFreq);
-  sleep(10);
-  //setupSweep(frequencyRange, intermediateFreq, stepTriggerTimeInMicro / 1000);
+  //sleep(10);
   
-  //std::cout << "after sweep setup:" << std::endl;
+  setupSweep(rfSource, startFrequency, stepFrequency, frequencyCount, intermediateFreq, stepTriggerTimeInMicro / 1000);
+  
+  std::cout << "after sweep setup:" << std::endl;
 
   //enableExcitation(transmitPower, loPower);
-  //queryFrequency();
-  //queryPower();
-
+  queryFrequency(rfSource);
+  queryPower(rfSource);
+ 
 
   for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
     struct RadarProfile* profile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
@@ -555,12 +612,6 @@ int main (int argc, char **argv) {
   
   int currentBufferIndex = 0;
   bool sweepDirectionUp = true;
-  int currentFrequencyIndex = 0;
-  rp_pinState_t channel0PriorLockState;
-  rp_pinState_t channel1PriorLockState;
-
-  rp_pinState_t channel0LockState;
-  rp_pinState_t channel1LockState;
 
   //setFrequency(frequencyRange[0], intermediateFreq);
   //std::this_thread::sleep_for(std::chrono::milliseconds(5000));
@@ -579,8 +630,8 @@ int main (int argc, char **argv) {
     for(int i = 0; i < frequencyCount; i++) {
       setFrequency(rfSource, frequencyRange[i], intermediateFreq);
       
-      //queryFrequency();
-      //queryPower();
+      //queryFrequency(rfSource);
+      //queryPower(rfSource);
 
 
       //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
@@ -588,7 +639,10 @@ int main (int argc, char **argv) {
       //std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
       //rp_DpinSetState(stepPin, RP_LOW);
 
-      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
+      /*std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
+      rp_DpinSetState(stepPin, RP_HIGH);
+      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
+      rp_DpinSetState(stepPin, RP_LOW);*/
 
       //std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
       //queryFrequency();
@@ -640,7 +694,7 @@ int main (int argc, char **argv) {
         &profileBuffers[currentBufferIndex]->data[idx0],
         &profileBuffers[currentBufferIndex]->data[idx1]);
 
-     /*if(i == 1) {
+      /*if(i == 1) {
         printf("insert\n");
         profileBuffer.insert(&profileBuffers[currentBufferIndex]);
         sleep(100000);
