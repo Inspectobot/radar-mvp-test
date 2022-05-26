@@ -96,6 +96,7 @@ int settlingTimeInMicro = 500000;
 int bufferSampleDelay = 8192;
 int sampleTimeInMicro = 133;
 int stepTriggerTimeInMicro = 5;
+int synthWarmupTimeInMicro = 10000000;
 
 static volatile int keepRunning = 1;
 
@@ -112,6 +113,7 @@ struct ParametersMessage {
   int settlingTimeInMicro = 200000;
   int bufferSampleDelay = 8192;
   int stepTriggerTimeInMicro = 5;
+  int synthWarmupTimeInMicro = 10000000;
 
   MSGPACK_DEFINE_MAP(
     timestamp,
@@ -125,7 +127,8 @@ struct ParametersMessage {
     sampleCount,
     settlingTimeInMicro,
     bufferSampleDelay,
-    stepTriggerTimeInMicro
+    stepTriggerTimeInMicro,
+    synthWarmupTimeInMicro
   )
 };
 
@@ -145,6 +148,7 @@ void updateParameters(ParametersMessage parametersMessage) {
   settlingTimeInMicro = parametersMessage.settlingTimeInMicro;
   bufferSampleDelay = parametersMessage.bufferSampleDelay;
   stepTriggerTimeInMicro = parametersMessage.stepTriggerTimeInMicro;
+  synthWarmupTimeInMicro = parametersMessage.synthWarmupTimeInMicro;
 }
 
 void updateParametersFromString(string parametersString) {
@@ -188,9 +192,6 @@ void enableExcitation(SynthSerialPort& rfSource, int transmitPower, int loPower)
   float transmitAtten = 15.0 - transmitPower;
   float loAtten = 15 - loPower;
 
-  transmitAtten = transmitAtten > 0.0 ? transmitAtten : 0.0;
-  loAtten = loAtten > 0.0 ? loAtten : 0.0;
-  
   rfSource.SendCommand("Source 1");
  
   std::stringstream transmitPowerSs;
@@ -572,16 +573,29 @@ int main (int argc, char **argv) {
 
   SynthSerialPort rfSource;
   rfSource.Open("/dev/ttyUSB0");
-  rfSource.SetBaudRate(BaudRate::BAUD_115200);
+  rfSource.SetBaudRate(BaudRate::BAUD_9600);
   rfSource.SetFlowControl(FlowControl::FLOW_CONTROL_NONE);
   rfSource.SetParity(Parity::PARITY_NONE);
   rfSource.SetStopBits(StopBits::STOP_BITS_1);
   rfSource.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
 
+  rfSource.SendCommand("BAUD 115200");
+  rfSource.Close();
+
+  rfSource.Open("/dev/ttyUSB0");
+  rfSource.SetBaudRate(BaudRate::BAUD_115200);
+  rfSource.SetFlowControl(FlowControl::FLOW_CONTROL_NONE);
+  rfSource.SetParity(Parity::PARITY_NONE);
+  rfSource.SetStopBits(StopBits::STOP_BITS_1);
+  rfSource.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
+  
   sleep(2);
   tcflush(rfSource.GetFileDescriptor(),TCIOFLUSH);
 
   rfSource.SendCommand("RST");
+
+  std::string status = rfSource.SendCommand("STATUS");
+  std::cout << "Synth Status: " << status << std::endl;
 
   //setFrequency(frequencyRange[0], intermediateFreq);
   
@@ -593,9 +607,16 @@ int main (int argc, char **argv) {
   enableExcitation(rfSource, transmitPower, loPower);
   std::cout << "Warming up RF PLL..." << std::endl;
   setFrequency(rfSource, frequencyRange[0], intermediateFreq);
-  //sleep(10);
-  
-  setupSweep(rfSource, startFrequency, stepFrequency, frequencyCount, intermediateFreq, stepTriggerTimeInMicro / 1000);
+  std::this_thread::sleep_for(std::chrono::microseconds(synthWarmupTimeInMicro));
+
+  setupSweep(
+    rfSource, 
+    startFrequency, 
+    stepFrequency, 
+    frequencyCount, 
+    intermediateFreq, 
+    (stepTriggerTimeInMicro + settlingTimeInMicro + sampleTimeInMicro) / 1000
+  );
   
   std::cout << "after sweep setup:" << std::endl;
 
@@ -628,25 +649,13 @@ int main (int argc, char **argv) {
     //rp_DpinSetState(stepPin, RP_HIGH);
     
     for(int i = 0; i < frequencyCount; i++) {
-      setFrequency(rfSource, frequencyRange[i], intermediateFreq);
+      //setFrequency(rfSource, frequencyRange[i], intermediateFreq);
       
       //queryFrequency(rfSource);
       //queryPower(rfSource);
 
 
       //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-
-      //std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
-      //rp_DpinSetState(stepPin, RP_LOW);
-
-      /*std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
-      rp_DpinSetState(stepPin, RP_HIGH);
-      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
-      rp_DpinSetState(stepPin, RP_LOW);*/
-
-      //std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
-      //queryFrequency();
-      //queryPower();
 
       rp_AcqStart();
       
@@ -699,12 +708,18 @@ int main (int argc, char **argv) {
         profileBuffer.insert(&profileBuffers[currentBufferIndex]);
         sleep(100000);
       }*/
-         
+
+      rp_DpinSetState(stepPin, RP_HIGH);
+      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
+      rp_DpinSetState(stepPin, RP_LOW);
+      
+      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
+
       //int64_t endSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     }
 
     profileBuffer.insert(&profileBuffers[currentBufferIndex]);
-    sweepDirectionUp = !sweepDirectionUp;
+    //sweepDirectionUp = !sweepDirectionUp;
      
     currentBufferIndex++; 
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
