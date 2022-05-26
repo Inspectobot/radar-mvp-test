@@ -519,7 +519,7 @@ int main (int argc, char **argv) {
   
   thread tcpDataServerThread(tcpDataServerTask);
   
-  nc::NdArray<float> frequencyRange = nc::linspace<float>(startFrequency, startFrequency + frequencyCount * stepFrequency, frequencyCount);
+  nc::NdArray<float> frequencyRange = nc::linspace<float>(startFrequency, startFrequency + ((frequencyCount - 1) * stepFrequency), frequencyCount);
   frequencyRange.print();
 
   cpu_set_t mask;
