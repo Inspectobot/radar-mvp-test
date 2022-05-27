@@ -22,11 +22,11 @@ if __name__ == '__main__':
     mpl.rcParams["figure.autolayout"] = True
 
 
-    num_samples = 16384
-    number_of_frequencies = 201
+    num_samples = 2048
+    number_of_frequencies = 101
     number_of_channels = 2
-    start_frequency = 1000
-    step_frequency = 10
+    start_frequency = 1000.00
+    step_frequency = 20
     intermediate_frequency = 32
     transmit_power = 0
     lo_power = 15
@@ -46,7 +46,8 @@ if __name__ == '__main__':
     #synth.set_power()
 
     #synth.enable()
-
+   
+    f = np.linspace(start_frequency, start_frequency + ((number_of_frequencies - 1) * step_frequency), number_of_frequencies)   
     RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -68,11 +69,11 @@ if __name__ == '__main__':
 
     #time.sleep(1)
 
-    dut = profile.getSamplesAtIndex(1, 0)
-    ref = profile.getSamplesAtIndex(0, 0)
+    dut = profile.getSamplesAtIndex(1, 100)
+    ref = profile.getSamplesAtIndex(0, 100)
 
     print(dut)
-
+    print(ref)
     #np.savetxt('s-dut_' + '.csv', dut, delimiter=",", newline="\n")
     #np.savetxt('s-ref_' + '.csv', ref, delimiter=",", newline="\n")
 

@@ -13,19 +13,19 @@ import socket
 
 import csv
 if __name__ == '__main__':
-    num_samples = 16384
-    number_of_frequencies = 201
+    num_samples = 2048
+    number_of_frequencies = 101
     number_of_channels = 2
     start_frequency = 1000
     step_frequency = 10
-    intermediate_frequency = 20
+    intermediate_frequency = 32
     transmit_power = 0
     lo_power = 15
 
     RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
 
-    if_filter = IQDemodulator(f_lo=24e6, fc=4e6, ft=1e6, number_of_taps=128, fs=122.88e6, t_sample=1e-6, n=num_samples)
-    bb_filter = LowPassFilter(fc=1e6, ft=1e6, number_of_taps=128, fs=122.88e6, ts=1e-6, N=num_samples)
+    if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=1e6, number_of_taps=256, fs=122.88e6, t_sample=1e-6, n=num_samples) 
+    bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=256, fs=122.88e6, ts=1e-6, N=num_samples)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_address = ('eli-rover.local', 1001)
@@ -35,11 +35,11 @@ if __name__ == '__main__':
     data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
     c.memmove(c.addressof(profile), data, c.sizeof(profile))
 
-    N = 201
+    N = number_of_frequencies
     x = np.zeros(N, dtype=complex)
-    f = np.linspace(start_frequency, start_frequency + number_of_frequencies * step_frequency, number_of_frequencies)
+    f = np.linspace(start_frequency, start_frequency + ((number_of_frequencies - 1) * step_frequency), number_of_frequencies)
 
-    print('done!')
+    print(f)
 
     for i in range(N):
       dut = profile.getSamplesAtIndex(1, i)
