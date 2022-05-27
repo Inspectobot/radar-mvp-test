@@ -1,5 +1,6 @@
 import time
 import sys
+import argparse
 import ctypes as c
 
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
@@ -14,45 +15,79 @@ import h5py
 
 import csv
 if __name__ == '__main__':
-    num_samples = 2048
-    number_of_frequencies = 101
-    number_of_channels = 2
-    start_frequency = 1000
-    step_frequency = 10
-    intermediate_frequency = 32
-    transmit_power = 0
-    lo_power = 15
+    parser = argparse.ArgumentParser(description='Run a sweep or process and view saved sweep data.')
+    parser.add_argument('-d', '--data-file-path', type=str, help="Read a saved sweep hdf5 file")
 
-    RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
+    parser.add_argument('-s', '--num_samples', type=int, default=2048, help="Number of samples")
+    parser.add_argument('-n', '--number_of_frequencies', type=int, default=101, help="Number of samples")
+    parser.add_argument('-c', '--number_of_channels', type=int, default=2, help="Number of channels")
+    parser.add_argument('-f', '--start_frequency', type=float, default=1000.0, help="Start frequency")
+    parser.add_argument('-t', '--step_frequency', type=float, default=10.0, help="Step frequency")
+    parser.add_argument('-if', '--intermediate_frequency', type=float, default=32.0, help="Intermediate (IF) frequency")
+    parser.add_argument('-tx', '--transmit_power', type=float, default=0.0, help="Transmit power in dB")
+    parser.add_argument('-lo', '--lo_power', type=float, default=15.0, help="Local oscillator power in dB")
+
+    args = parser.parse_args()
+
+    if args.data_file_path is None:
+      num_samples = args.num_samples
+      number_of_frequencies = args.number_of_frequencies
+      number_of_channels = args.number_of_channels
+      start_frequency = args.start_frequency
+      step_frequency = args.step_frequency
+      intermediate_frequency = args.intermediate_frequency
+      transmit_power = args.transmit_power
+      lo_power = args.lo_power
+
+      RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
+      sweepFile = h5py.File("sweep-" + str(int(time.time())) + ".hdf5", "w")
+      sweepDataSet = sweepFile.create_dataset('sweep_data_raw', (number_of_channels, number_of_frequencies, num_samples), dtype='f')
+
+      sweepDataSet.attrs['num_samples'] = num_samples
+      sweepDataSet.attrs['number_of_frequencies'] = number_of_frequencies
+      sweepDataSet.attrs['number_of_channels'] = number_of_channels
+      sweepDataSet.attrs['start_frequency'] = start_frequency
+      sweepDataSet.attrs['step_frequency'] = step_frequency
+      sweepDataSet.attrs['intermediate_frequency'] = intermediate_frequency
+      sweepDataSet.attrs['transmit_power'] = transmit_power
+      sweepDataSet.attrs['lo_power'] = lo_power
+
+      sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      server_address = ('eli-rover.local', 1001)
+
+      sock.connect(server_address)
+      profile = RadarProfile()
+      data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
+      c.memmove(c.addressof(profile), data, c.sizeof(profile))
+
+      sweepDataSet.write_direct(profile.asArray())
+      sweepFile.close()
+    else:
+      sweepFile = h5py.File(args.data_file_path, "r")
+
+      sweepDataSet = sweepFile['sweep_data_raw']
+
+      num_samples = sweepDataSet.attrs['num_samples']
+      number_of_frequencies = sweepDataSet.attrs['number_of_frequencies']
+      number_of_channels = sweepDataSet.attrs['number_of_channels']
+      start_frequency = sweepDataSet.attrs['start_frequency']
+      step_frequency = sweepDataSet.attrs['step_frequency']
+      intermediate_frequency = sweepDataSet.attrs['intermediate_frequency']
+      transmit_power = sweepDataSet.attrs['transmit_power']
+      lo_power = sweepDataSet.attrs['lo_power']
+
+      RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
+      profile = RadarProfile()
+
+      profile.setArrayFromDataset(sweepDataSet)
+      sweepFile.close()
 
     if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=1e6, number_of_taps=256, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=256, fs=122.88e6, ts=1e-6, N=num_samples)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('eli-rover.local', 1001)
-
-    sock.connect(server_address)
-    profile = RadarProfile()
-    data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
-    c.memmove(c.addressof(profile), data, c.sizeof(profile))
-
     N = number_of_frequencies
     x = np.zeros(N, dtype=complex)
     f = np.linspace(start_frequency, start_frequency + ((number_of_frequencies - 1) * step_frequency), number_of_frequencies)
-
-    sweepFile = h5py.File("sweep-" + str(int(time.time())) + ".hdf5", "w")
-    sweepDataSet = sweepFile.create_dataset('sweep_data_raw', (number_of_channels, number_of_frequencies, num_samples), dtype='f')
-
-    sweepDataSet.attrs['num_samples'] = num_samples
-    sweepDataSet.attrs['number_of_frequencies'] = number_of_frequencies
-    sweepDataSet.attrs['number_of_channels'] = number_of_channels
-    sweepDataSet.attrs['start_frequency'] = start_frequency
-    sweepDataSet.attrs['step_frequency'] = step_frequency
-    sweepDataSet.attrs['intermediate_frequency'] = intermediate_frequency
-    sweepDataSet.attrs['transmit_power'] = transmit_power
-    sweepDataSet.attrs['lo_power'] = lo_power
-
-    sweepDataSet.write_direct(profile.asArray())
 
     for i in range(N):
       dut = profile.getSamplesAtIndex(1, i)

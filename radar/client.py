@@ -9,6 +9,12 @@ def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_freq
       ('data', c.c_float * (num_samples * number_of_frequencies * number_of_channels))
     ]
 
+    def setArrayFromDataset(self, ds):
+      d = np.empty((number_of_channels, number_of_frequencies, num_samples), dtype = np.float)
+      ds.read_direct(d)
+
+      self._array = d
+
     def asArray(self):
       if hasattr(self, '_array'):
         return self._array
