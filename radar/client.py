@@ -9,9 +9,19 @@ def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_freq
       ('data', c.c_float * (num_samples * number_of_frequencies * number_of_channels))
     ]
 
-    def getSamplesAtIndex(self, channel = 0, index = 0):
+    def asArray(self):
+      if hasattr(self, '_array'):
+        return self._array
+
       d = np.array(self.data)
       d = d.reshape(number_of_channels, number_of_frequencies, num_samples)
+
+      self._array = d
+
+      return d
+
+    def getSamplesAtIndex(self, channel = 0, index = 0):
+      d = self.asArray()
       return d[channel][index]
 
   return RadarProfile

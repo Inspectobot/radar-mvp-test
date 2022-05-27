@@ -10,6 +10,7 @@ import numpy as np
 from scipy import signal
 
 import socket
+import h5py
 
 import csv
 if __name__ == '__main__':
@@ -24,7 +25,7 @@ if __name__ == '__main__':
 
     RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
 
-    if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=1e6, number_of_taps=256, fs=122.88e6, t_sample=1e-6, n=num_samples) 
+    if_filter = IQDemodulator(f_lo=36e6, fc=4e6, ft=1e6, number_of_taps=256, fs=122.88e6, t_sample=1e-6, n=num_samples)
     bb_filter = LowPassFilter(fc=0.5e6, ft=1e6, number_of_taps=256, fs=122.88e6, ts=1e-6, N=num_samples)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -39,18 +40,26 @@ if __name__ == '__main__':
     x = np.zeros(N, dtype=complex)
     f = np.linspace(start_frequency, start_frequency + ((number_of_frequencies - 1) * step_frequency), number_of_frequencies)
 
-    print(f)
+    sweepFile = h5py.File("sweep-" + str(int(time.time())) + ".hdf5", "w")
+    sweepDataSet = sweepFile.create_dataset('sweep_data_raw', (number_of_channels, number_of_frequencies, num_samples), dtype='f')
+
+    sweepDataSet.attrs['num_samples'] = num_samples
+    sweepDataSet.attrs['number_of_frequencies'] = number_of_frequencies
+    sweepDataSet.attrs['number_of_channels'] = number_of_channels
+    sweepDataSet.attrs['start_frequency'] = start_frequency
+    sweepDataSet.attrs['step_frequency'] = step_frequency
+    sweepDataSet.attrs['intermediate_frequency'] = intermediate_frequency
+    sweepDataSet.attrs['transmit_power'] = transmit_power
+    sweepDataSet.attrs['lo_power'] = lo_power
+
+    sweepDataSet.write_direct(profile.asArray())
 
     for i in range(N):
       dut = profile.getSamplesAtIndex(1, i)
       ref = profile.getSamplesAtIndex(0, i)
 
-      np.savetxt('dut_' + str(i) + '.csv', dut, delimiter=",", newline="\n")
-      np.savetxt('ref_' + str(i) + '.csv', ref, delimiter=",", newline="\n")
-
       print(dut)
       print(ref)
-
 
       print(i)
       print('dut')
