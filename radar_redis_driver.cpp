@@ -97,6 +97,7 @@ int bufferSampleDelay = 8192;
 int sampleTimeInMicro = 133;
 int stepTriggerTimeInMicro = 5;
 int synthWarmupTimeInMicro = 10000000;
+int channelCount = 2;
 
 static volatile int keepRunning = 1;
 
@@ -114,10 +115,12 @@ struct ParametersMessage {
   int bufferSampleDelay = 8192;
   int stepTriggerTimeInMicro = 5;
   int synthWarmupTimeInMicro = 10000000;
+  int channelCount = 2;
 
   MSGPACK_DEFINE_MAP(
     timestamp,
 
+    channelCount,
     startFrequency,
     stepFrequency,
     frequencyCount,
@@ -136,6 +139,8 @@ ParametersMessage lastParametersMessage;
 
 void updateParameters(ParametersMessage parametersMessage) {
   lastParametersMessage = parametersMessage;
+
+  channelCount = parametersMessage.channelCount;
 
   startFrequency = parametersMessage.startFrequency;
   stepFrequency = parametersMessage.stepFrequency;
