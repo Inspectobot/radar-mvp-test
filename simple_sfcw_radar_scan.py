@@ -42,7 +42,7 @@ if __name__ == '__main__':
           trajectoryRunning = True
           sweepCount = 0
 
-          scanFileName = "sweep-" + str(int(time.time())) + ".hdf5"
+          scanFileName = "scan-" + str(int(time.time())) + ".hdf5"
           scanFile = h5py.File(scanFileName, "w")
 
           print("Started scan: " + scanFileName)
