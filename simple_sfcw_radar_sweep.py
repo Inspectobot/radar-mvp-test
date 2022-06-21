@@ -19,10 +19,10 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--data-file-path', type=str, help="Read a saved sweep hdf5 file")
 
     parser.add_argument('-s', '--num_samples', type=int, default=2048, help="Number of samples")
-    parser.add_argument('-n', '--number_of_frequencies', type=int, default=101, help="Number of samples")
+    parser.add_argument('-n', '--number_of_frequencies', type=int, default=151, help="Number of samples")
     parser.add_argument('-c', '--number_of_channels', type=int, default=2, help="Number of channels")
-    parser.add_argument('-f', '--start_frequency', type=float, default=1000.0, help="Start frequency")
-    parser.add_argument('-t', '--step_frequency', type=float, default=10.0, help="Step frequency")
+    parser.add_argument('-f', '--start_frequency', type=float, default=1500.0, help="Start frequency")
+    parser.add_argument('-t', '--step_frequency', type=float, default=20.0, help="Step frequency")
     parser.add_argument('-if', '--intermediate_frequency', type=float, default=32.0, help="Intermediate (IF) frequency")
     parser.add_argument('-tx', '--transmit_power', type=float, default=0.0, help="Transmit power in dB")
     parser.add_argument('-lo', '--lo_power', type=float, default=15.0, help="Local oscillator power in dB")
@@ -154,6 +154,7 @@ if __name__ == '__main__':
     plot.xlabel('Range in meters')
     plot.ylabel('Amplitude in volts')
     plot.title('Plot of radar range profile (Linear)')
+    plot.xlim([0,2])
 
     plot.figure(5)
     plot.plot(r, 20*np.log10(np.abs(z)))
