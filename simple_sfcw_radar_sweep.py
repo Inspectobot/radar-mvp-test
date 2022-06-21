@@ -53,7 +53,7 @@ if __name__ == '__main__':
       sweepDataSet.attrs['lo_power'] = lo_power
 
       sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-      server_address = ('eli-rover.local', 1001)
+      server_address = ('inspectobot-rover.local', 1001)
 
       sock.connect(server_address)
       profile = RadarProfile()
@@ -171,3 +171,5 @@ if __name__ == '__main__':
     plot.title('Plot of radar range profile ')
     plot.xlim([0.5,1.5])
     plot.show()
+
+    plot.clf()

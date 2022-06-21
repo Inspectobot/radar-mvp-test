@@ -1,6 +1,8 @@
 import ctypes as c
 import numpy as np
 
+import pickle
+
 def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_frequencies = 101):
   class RadarProfile(c.LittleEndianStructure):
     _pack_ = 1
@@ -8,6 +10,14 @@ def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_freq
       ('timestamp', c.c_uint32),
       ('data', c.c_float * (num_samples * number_of_frequencies * number_of_channels))
     ]
+
+    def saveCacheKey(self, r, prefix, key):
+      pickled_object = pickle.dumps(self.asArray())
+      r.set(prefix + '_' + key, pickled_object)
+
+    def loadCacheKey(self, r, prefix, key):
+      unpacked_object = pickle.loads(r.get(prefix + '_' + key))
+      self._array = unpacked_object
 
     def setArrayFromDataset(self, ds):
       d = np.empty((number_of_channels, number_of_frequencies, num_samples), dtype = np.float)
