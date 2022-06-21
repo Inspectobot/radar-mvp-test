@@ -59,14 +59,14 @@ class SynthSerialPort : public SerialPort {
 
       SerialPort::Write(dataString + ";\r");
       SerialPort::DrainWriteBuffer();
-            
+
       std::stringstream ss;
 
       while(responseLineCount > 0) {
         responseLineCount--;
 
         try {
-          
+
           std::string responseLine;
           SerialPort::ReadLine(responseLine, '\r', 1);
           if(DEBUG_SYNTH_SERIAL) std::cout << "Response: " << responseLine << endl;
@@ -173,7 +173,7 @@ Redis* redis;
 
 struct RadarProfile {
   uint32_t timestamp;
-  
+
   float data[];
 };
 
@@ -198,22 +198,22 @@ void enableExcitation(SynthSerialPort& rfSource, int transmitPower, int loPower)
   float loAtten = 15 - loPower;
 
   rfSource.SendCommand("Source 1");
- 
+
   std::stringstream transmitPowerSs;
   transmitPowerSs << std::fixed << std::setprecision(2) << transmitAtten;
 
-  rfSource.SendCommand("ATTenuator " + transmitPowerSs.str());  
-   
+  rfSource.SendCommand("ATTenuator " + transmitPowerSs.str());
+
   rfSource.SendCommand("oen 1");
   rfSource.SendCommand("pdn 1");
 
   rfSource.SendCommand("Source 2");
-  
+
   std::stringstream loPowerSs;
   loPowerSs << std::fixed << std::setprecision(2) << loAtten;
 
-  rfSource.SendCommand("ATTenuator " + loPowerSs.str());  
-  
+  rfSource.SendCommand("ATTenuator " + loPowerSs.str());
+
   rfSource.SendCommand("oen 1");
   rfSource.SendCommand("pdn 1");
 
@@ -244,7 +244,7 @@ void queryPower(SynthSerialPort& rfSource) {
   std::string channel1 = rfSource.SendCommand("ATTenuator?");
 
   std::cout << "Channel 1 Attenutation (power +15 dbM): " << channel1 << std::endl;
-  
+
   rfSource.SendCommand("Source 1");
 }
 
@@ -265,7 +265,7 @@ void intHandler(int dummy) {
 	if (keepRunning == 0) {
 		printf("shutting down!\n");
     //disableExcitation();
-    
+
     rp_Release();
 
     exit(-1);
@@ -282,7 +282,7 @@ void setupSweep(
   float stepTimeInMs) {
 
   std::cout << "Step time in ms: " << stepTimeInMs << std::endl;
-  
+
   rfSource.SendCommand("Source 1");
   rfSource.SendCommand("Mode SWEEP");
 
@@ -341,10 +341,10 @@ void setupSweepTable(
   int frequencyCount = sweepRange.size();
 
   for(int c = 0; c < CHANNEL_COUNT; c++) {
-    
+
     rfSource.SendCommand("Source " + std::to_string(c + 1));
     rfSource.SendCommand("Mode LIST");
-    
+
     std::stringstream rateInMsSs;
     rateInMsSs << std::fixed << std::setprecision(1);
     rfSource.SendCommand("RATE " + rateInMsSs.str());
@@ -356,7 +356,7 @@ void setupSweepTable(
 
     int listIndex = 0;
     for(int i = 0; i < (frequencyCount * 2); i++) {
-      
+
       listIndex++;
 
       int j = i;
@@ -364,19 +364,19 @@ void setupSweepTable(
       if(i > (frequencyCount - 1)) {
         j = (frequencyCount - 1) - (i - frequencyCount);
       }
-      
+
       std::stringstream sweepTableEntry;
 
       sweepTableEntry
         << "List"
-        << " " 
-        << std::to_string(listIndex) 
+        << " "
+        << std::to_string(listIndex)
         << " "
         << std::fixed << std::setprecision(6) << sweepRange[j] + (c == 1 ? intermediateFrequency : 0.0)
         << " "
         << std::fixed << std::setprecision(1) << (c == 0 ? transmitAtten : loAtten);
 
-      rfSource.SendCommand(sweepTableEntry.str());    
+      rfSource.SendCommand(sweepTableEntry.str());
     }
   }
 }
@@ -392,7 +392,7 @@ void tcpDataServerTask() {
   memset(&param, 0, sizeof(param));
   param.sched_priority = sched_get_priority_max(SCHED_FIFO);
   sched_setscheduler(0, SCHED_FIFO, &param);
-  
+
   CPU_ZERO(&mask);
   CPU_SET(0, &mask);
   sched_setaffinity(0, sizeof(cpu_set_t), &mask);
@@ -400,12 +400,12 @@ void tcpDataServerTask() {
   int sock_server, sock_client;
   int yes = 1;
 
-  struct sockaddr_in addr; 
+  struct sockaddr_in addr;
 
   printf("Started tcp server task\n");
 
   if((sock_server = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printf("Error opening listening socket\n"); 
+    printf("Error opening listening socket\n");
     keepRunning = false;
   }
 
@@ -415,14 +415,14 @@ void tcpDataServerTask() {
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(TCP_PORT);
-  
+
   if(bind(sock_server, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     printf("Error binding to socket\n");
     keepRunning = false;
   }
 
   listen(sock_server, 1024);
-  
+
   while(keepRunning) {
     if((sock_client = accept(sock_server, NULL, NULL)) < 0) {
       printf("Error accepting connection on socket\n");
@@ -440,16 +440,16 @@ void tcpDataServerTask() {
     while(keepRunning && !clientFault) {
 
       printf("got here\n");
-      
+
       struct RadarProfile* profile = nullptr;
 
       while(!profileBuffer.remove(profile)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         //sched_yield();
       }
-      
+
       memcpy(data, profile, len);
-      
+
       size_t offset = 0;
       ssize_t result;
       while (offset < len) {
@@ -477,11 +477,11 @@ int main (int argc, char **argv) {
 
   redisConnectionOpts.host = "rover";
   redisConnectionOpts.port = 6379;
-  redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5); 
-  
+  redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5);
+
   redis = new Redis(redisConnectionOpts);
 
-  auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
+  auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY); // This is a DISASTER!  Use local clocks!!!!
   if(timestamp) {
     string timestampString = *timestamp;
 
@@ -521,9 +521,9 @@ int main (int argc, char **argv) {
 
     updateParameters(parametersMessage);
   }
-  
+
   thread tcpDataServerThread(tcpDataServerTask);
-  
+
   nc::NdArray<float> frequencyRange = nc::linspace<float>(startFrequency, startFrequency + ((frequencyCount - 1) * stepFrequency), frequencyCount);
   frequencyRange.print();
 
@@ -534,7 +534,7 @@ int main (int argc, char **argv) {
   memset(&param, 0, sizeof(param));
   param.sched_priority = sched_get_priority_max(SCHED_FIFO);
   sched_setscheduler(0, SCHED_FIFO, &param);
-  
+
   CPU_ZERO(&mask);
   CPU_SET(1, &mask);
   sched_setaffinity(0, sizeof(cpu_set_t), &mask);
@@ -551,7 +551,7 @@ int main (int argc, char **argv) {
   // needed to set internal flag `triggerDelayInNs = false`
   rp_AcqSetTriggerDelay(0);
   osc_SetTriggerDelay(sampleCount);
-  
+
   rp_AcqSetSamplingRate(RP_SMP_122_880M);
   rp_AcqSetDecimation(RP_DEC_1);
 
@@ -567,7 +567,7 @@ int main (int argc, char **argv) {
 
   rp_DpinSetDirection(channel0LockDetect, RP_IN);
   rp_DpinSetDirection(channel1LockDetect, RP_IN);
-  
+
   sampleTimeInMicro = ((1 / ADC_SAMPLE_RATE) * sampleCount * 1000000);
   //rp_AcqSetTriggerDelayNs(sampleTimeInMicro * 1000);
 
@@ -593,7 +593,7 @@ int main (int argc, char **argv) {
   rfSource.SetParity(Parity::PARITY_NONE);
   rfSource.SetStopBits(StopBits::STOP_BITS_1);
   rfSource.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
-  
+
   sleep(2);
   tcflush(rfSource.GetFileDescriptor(),TCIOFLUSH);
 
@@ -603,39 +603,39 @@ int main (int argc, char **argv) {
   std::cout << "Synth Status: " << status << std::endl;
 
   //setFrequency(frequencyRange[0], intermediateFreq);
-  
+
   /*std::cout << "before sweep setup:" << std::endl;
   enableExcitation(transmitPower, loPower);
   queryFrequency(rfSource);
   queryPower(rfSource);*/
-  
+
   enableExcitation(rfSource, transmitPower, loPower);
   std::cout << "Warming up RF PLL..." << std::endl;
   setFrequency(rfSource, frequencyRange[0], intermediateFreq);
   std::this_thread::sleep_for(std::chrono::microseconds(synthWarmupTimeInMicro));
 
   setupSweep(
-    rfSource, 
-    startFrequency, 
-    stepFrequency, 
-    frequencyCount, 
-    intermediateFreq, 
+    rfSource,
+    startFrequency,
+    stepFrequency,
+    frequencyCount,
+    intermediateFreq,
     (stepTriggerTimeInMicro + settlingTimeInMicro + sampleTimeInMicro) / 1000
   );
-  
+
   std::cout << "after sweep setup:" << std::endl;
 
   //enableExcitation(transmitPower, loPower);
   queryFrequency(rfSource);
   queryPower(rfSource);
- 
+
 
   for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
     struct RadarProfile* profile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
 
     profileBuffers[i] = profile;
   }
-  
+
   int currentBufferIndex = 0;
   bool sweepDirectionUp = true;
 
@@ -650,12 +650,12 @@ int main (int argc, char **argv) {
     profileBuffers[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
 
     //std::cout << "timestamp is: " << profileBuffers[currentBufferIndex]->timestamp << std::endl;
-    
+
     //rp_DpinSetState(stepPin, RP_HIGH);
-    
+
     for(int i = 0; i < frequencyCount; i++) {
       //setFrequency(rfSource, frequencyRange[i], intermediateFreq);
-      
+
       //queryFrequency(rfSource);
       //queryPower(rfSource);
 
@@ -663,12 +663,12 @@ int main (int argc, char **argv) {
       //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
       rp_AcqStart();
-      
+
       //sleep(0.5);
       //std::this_thread::sleep_for(std::chrono::microseconds(sampleTimeInMicro));
 
       rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-      rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING; 
+      rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
       while(1){
         rp_AcqGetTriggerState(&state);
@@ -681,18 +681,18 @@ int main (int argc, char **argv) {
       while(!fillState) {
         rp_AcqGetBufferFillState(&fillState);
       }*/
-     
+
       //std::cout << "triggered! " << i << std::endl;
       //rp_AcqStart();
-      
+
       //usleep(settlingTimeInMicro);
-    
+
       rp_AcqStop();
-      
+
       uint32_t bufferTriggerPosition;
       rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
-      
-      int idx0, idx1; 
+
+      int idx0, idx1;
       if(sweepDirectionUp) {
         idx0 = i * sampleCount;
         idx1 = (sampleCount * frequencyCount) + idx0;
@@ -717,7 +717,7 @@ int main (int argc, char **argv) {
       rp_DpinSetState(stepPin, RP_HIGH);
       std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
       rp_DpinSetState(stepPin, RP_LOW);
-      
+
       std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
 
       //int64_t endSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
@@ -725,15 +725,15 @@ int main (int argc, char **argv) {
 
     profileBuffer.insert(&profileBuffers[currentBufferIndex]);
     //sweepDirectionUp = !sweepDirectionUp;
-     
-    currentBufferIndex++; 
+
+    currentBufferIndex++;
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-    
+
     printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
 
   //disableExcitation();
-  
+
   rp_Release();
 
   return 0;
