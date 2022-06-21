@@ -11,7 +11,6 @@ import h5py
 
 import asyncio
 
-import pprofile
 
 
 def process_sweep(ctx, filename, dataset_key,
