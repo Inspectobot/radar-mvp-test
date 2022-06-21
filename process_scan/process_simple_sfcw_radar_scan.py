@@ -34,7 +34,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 
 async def main(args):
-    executor = ProcessPoolExecutor(max_workers=4)
+    executor = ProcessPoolExecutor()
     scanFile = h5py.File(args.data_file_path, "r")
 
     sweepDataSets = scanFile.keys()
