@@ -7,7 +7,8 @@ from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
 from radar.client import CreateRadarProfile
 
 import matplotlib.pyplot as plot
-import numpy as np
+import cupy as np
+#import numpy as np
 from scipy import signal
 
 import socket
@@ -53,14 +54,14 @@ if __name__ == '__main__':
       sweepDataSet.attrs['lo_power'] = lo_power
 
       sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-      server_address = ('eli-rover.local', 1001)
+      server_address = ('inspectobot-rover.local', 1001)
 
       sock.connect(server_address)
       profile = RadarProfile()
       data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
       c.memmove(c.addressof(profile), data, c.sizeof(profile))
 
-      sweepDataSet.write_direct(profile.asArray())
+      #sweepDataSet.write_direct(profile.asArray().get())
       sweepFile.close()
     else:
       sweepFile = h5py.File(args.data_file_path, "r")
@@ -113,17 +114,17 @@ if __name__ == '__main__':
     x = x[1:]
     N=N-1
     plot.figure(1)
-    plot.plot(f, np.real(x),alpha=0.5)
-    plot.plot(f, np.imag(x),alpha=0.5)
-    plot.plot(f,np.abs(x),'k',alpha=0.3)
-    plot.plot(f,-np.abs(x),'k',alpha=0.3)
+    plot.plot(f.get(), np.real(x).get(),alpha=0.5)
+    plot.plot(f.get(), np.imag(x).get(),alpha=0.5)
+    plot.plot(f.get(),np.abs(x).get(),'k',alpha=0.3)
+    plot.plot(f.get(),-np.abs(x).get(),'k',alpha=0.3)
     plot.grid()
     plot.xlabel('Frequency in MHz')
     plot.ylabel('Amplitude in volts')
     plot.title('Plot of raw I,Q data')
 
     plot.figure(2)
-    plot.plot(f,np.angle(x))
+    plot.plot(f.get(),np.angle(x).get())
     plot.grid()
     plot.xlabel('Frequency in MHz')
     plot.ylabel('Phase in radians')
@@ -142,29 +143,29 @@ if __name__ == '__main__':
     z = z/np.max(np.abs(z))
 
     plot.figure(3)
-    plot.plot(f, np.unwrap(np.angle(x)))
+    plot.plot(f.get(), np.unwrap(np.angle(x)).get())
     plot.grid()
     plot.xlabel('Frequency in MHz')
     plot.ylabel('Phase in radians')
     plot.title('Plot of unwrapped phase as a function of frequency')
 
     plot.figure(4)
-    plot.plot(r, np.abs(z))
+    plot.plot(r.get(), np.abs(z).get())
     plot.grid()
     plot.xlabel('Range in meters')
     plot.ylabel('Amplitude in volts')
     plot.title('Plot of radar range profile (Linear)')
 
     plot.figure(5)
-    plot.plot(r, 20*np.log10(np.abs(z)))
+    plot.plot(r.get(), 20*np.log10(np.abs(z)).get())
     plot.grid()
     plot.xlabel('Range in meters')
     plot.ylabel('Plot of power in dBW')
     plot.title('Plot of radar range profile (dB scale)')
 
     plot.figure(6)
-    plot.plot(r,np.real(z))
-    plot.plot(r,np.imag(z))
+    plot.plot(r.get(),np.real(z).get())
+    plot.plot(r.get(),np.imag(z).get())
     plot.grid()
     plot.xlabel('Range in meters')
     plot.ylabel('Plot of amplitude')
