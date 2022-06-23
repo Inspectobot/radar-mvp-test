@@ -479,17 +479,27 @@ int main (int argc, char **argv) {
   redisConnectionOpts.port = 6379;
   redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5); 
   
-  redis = new Redis(redisConnectionOpts);
+  bool connectedToRedis = false;
 
-  auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
-  if(timestamp) {
-    string timestampString = *timestamp;
+  while(!connectedToRedis) {
+    try {
+      redis = new Redis(redisConnectionOpts);
 
-    startupTimestamp = atoll(timestampString.c_str());
-  } else {
-    std::cout << "Rover startup timestamp not set or invalid, check key: " << STARTUP_TIMESTAMP_KEY << std::endl;
+      auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
+      if(timestamp) {
+        string timestampString = *timestamp;
 
-    exit(0);
+        startupTimestamp = atoll(timestampString.c_str());
+        connectedToRedis = true;
+
+      } else {
+        std::cout << "Rover startup timestamp not set or invalid, check key: " << STARTUP_TIMESTAMP_KEY << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      }
+    } catch (const Error &err) {
+      std::cout << "Could not connect to redis " << std::endl;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
   }
 
   std::cout << "Rover startup timestamp: " << startupTimestamp << std::endl;
