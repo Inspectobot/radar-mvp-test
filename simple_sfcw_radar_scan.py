@@ -17,14 +17,14 @@ import redis
 import msgpack
 
 if __name__ == '__main__':
-    r = redis.Redis(host='inspectobot-rover.local')
+    r = redis.Redis(host='localhost')
     p = r.pubsub()
 
     params = msgpack.unpackb(r.get('radar_parameters'))
     RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('inspectobot-rover.local', 1001)
+    server_address = ('radar', 1001)
 
     sock.connect(server_address)
 
@@ -32,6 +32,9 @@ if __name__ == '__main__':
     sweepCount = 0
     scanFileName = None
     scanFile = None
+
+    print("Waiting for trajectory to start..")
+
     def roverControllerEvent(message):
       global trajectoryRunning, sweepCount, scanFileName, scanFile
 
@@ -71,6 +74,11 @@ if __name__ == '__main__':
 
         sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
         sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
+
+        r.publish('radar_sample_point', msgpack.packb({
+          'timestamp': profile.timestamp,
+          'pose': pose
+        }));
 
         sweepDataSet.write_direct(profile.asArray())
         sweepCount += 1
