@@ -133,3 +133,4 @@ bin/*
 build/*
 
 *.hdf5
+testdata*

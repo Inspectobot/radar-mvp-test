@@ -9,14 +9,16 @@ from radar.client import CreateRadarProfile
 import matplotlib.pyplot as plot
 import numpy as np
 from scipy import signal
+import requests
 
 import socket
 import h5py
 
 import csv
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Run a sweep or process and view saved sweep data.')
     parser.add_argument('-d', '--data-file-path', type=str, help="Read a saved sweep hdf5 file")
+    parser.add_argument('-o', '--data-file-output-path', type=str, help="Data file output filename")
 
     parser.add_argument('-s', '--num_samples', type=int, default=2048, help="Number of samples")
     parser.add_argument('-n', '--number_of_frequencies', type=int, default=151, help="Number of samples")
@@ -38,9 +40,17 @@ if __name__ == '__main__':
       intermediate_frequency = args.intermediate_frequency
       transmit_power = args.transmit_power
       lo_power = args.lo_power
+      output_path = args.data_file_output_path
 
       RadarProfile = CreateRadarProfile(number_of_channels, num_samples, number_of_frequencies)
-      sweepFile = h5py.File("sweep-" + str(int(time.time())) + ".hdf5", "w")
+      if output_path:
+          print("path " + output_path)
+          filename = output_path + ".hdf5"
+      else:
+          filename = "sweep-" + str(int(time.time())) + ".hdf5"
+      print(filename)
+
+      sweepFile = h5py.File(filename, "w")
       sweepDataSet = sweepFile.create_dataset('sweep_data_raw', (number_of_channels, number_of_frequencies, num_samples), dtype='f')
 
       sweepDataSet.attrs['num_samples'] = num_samples
@@ -53,15 +63,26 @@ if __name__ == '__main__':
       sweepDataSet.attrs['lo_power'] = lo_power
 
       sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      sock.settimeout(10)
       server_address = ('inspectobot-rover.local', 1001)
+      try:
+          sock.connect(server_address)
+      except Exception as e:
+          print("socket error restarting radar" + str(e))
+          requests.get("http://inspectobot-rover.local:8081/restart")
+          time.sleep(30)
+          sock.connect(server_address)
 
-      sock.connect(server_address)
       profile = RadarProfile()
       data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
       c.memmove(c.addressof(profile), data, c.sizeof(profile))
 
       sweepDataSet.write_direct(profile.asArray())
       sweepFile.close()
+      if output_path:
+          print("not rendering plot")
+          return
+
     else:
       sweepFile = h5py.File(args.data_file_path, "r")
 
@@ -174,3 +195,7 @@ if __name__ == '__main__':
     plot.show()
 
     plot.clf()
+
+
+if __name__ == '__main__':
+    main()
