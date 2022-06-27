@@ -66,6 +66,7 @@ if __name__ == '__main__':
         for key in params:
           sweepDataSet.attrs[key] = params[key]
 
+        sweepDataSet.attrs['timestamp'] = profile.timestamp
         pose = msgpack.unpackb(r.get('rover_pose'))
 
         sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
