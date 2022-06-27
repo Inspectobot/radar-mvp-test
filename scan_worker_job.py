@@ -1,10 +1,7 @@
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
 from radar.client import CreateRadarProfile
 
-#import numpy as np
-
-import cupy as np
-
+import numpy as np
 from scipy import signal
 
 import h5py
@@ -68,5 +65,3 @@ def process_sweep(filename, dataset_key):
     z = z/np.max(np.abs(z))
 
     return 1
-
-process_sweep('sweep-1655311425.hdf5', 'sweep-441')

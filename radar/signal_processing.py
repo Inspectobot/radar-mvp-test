@@ -1,8 +1,6 @@
-import cupy as cp
 import numpy as np
-
-from .signaltools import filtfilt
 from scipy import signal
+
 
 class BandPassFilter():
     def __init__(self, fc=32e6, bw=1e6, ft=1e6, number_of_taps=256, fs=122.88e6, ts=1e-6, N=16384):
@@ -18,17 +16,17 @@ class BandPassFilter():
         self._T = N * self._dt
         self._y_ts = 0
         self._edge = [0, fc - bw / 2 - ft, fc - bw / 2, fc + bw / 2, fc + bw / 2 + ft, 0.5 * fs]
-        self._b = cp.asarray(signal.remez(number_of_taps, self._edge, [0, 1, 0], Hz=fs))
+        self._b = signal.remez(number_of_taps, self._edge, [0, 1, 0], Hz=fs)
         self._a = [1]
-        self._x = cp.array([])
+        self._x = np.array([])
 
     def __call__(self, x, padlen=150):
         self._x = x
-        self._y = filtfilt(self._b, self._a, x)
+        self._y = signal.filtfilt(self._b, self._a, x)
         return self._y
 
     def sample(self):
-        self._y_ts = 2 * cp.mean(self._y[self._L:self._N // 2])
+        self._y_ts = 2 * np.mean(self._y[self._L:self._N // 2])
         return self._y_ts
 
 
@@ -46,17 +44,17 @@ class LowPassFilter():
         self._T = N * self._dt
         self._y_ts = 0
         self._edge = [0, fc, fc + ft, 0.5 * fs]
-        self._b = cp.asarray(signal.remez(number_of_taps, self._edge, [1, 0], Hz=fs))
-        self._a = cp.asarray([1, 1])
-        self._x = cp.array([])
+        self._b = signal.remez(number_of_taps, self._edge, [1, 0], Hz=fs)
+        self._a = [1]
+        self._x = np.array([])
 
     def __call__(self, x, padlen=150):
         self._x = x
-        self._y = filtfilt(self._b, self._a, x)
+        self._y = signal.filtfilt(self._b, self._a, x)
         return self._y
 
     def sample(self):
-        self._y_ts = 2 * cp.mean(self._y[self._L:self._N // 2])
+        self._y_ts = 2 * np.mean(self._y[self._L:self._N // 2])
         return self._y_ts
 
 
@@ -74,17 +72,19 @@ class IQDemodulator():
         self._t = np.linspace(0,self._n*self._Ts,self._n)
 
         #Create lo frequency
-        self._lo = cp.asarray(np.exp(-1j*2*np.pi*self._f_lo*self._t))
+        self._lo = np.exp(-1j*2*np.pi*self._f_lo*self._t)
 
         #Build filter
         self._edge = [0, fc, fc + ft, 0.5 * fs]
-        self._b = cp.asarray(signal.remez(number_of_taps, self._edge, [1, 0], Hz=fs))
-        self._a = cp.asarray([1, 1])
-        self._x = cp.array([])
+        self._b = signal.remez(number_of_taps, self._edge, [1, 0], Hz=fs)
+        self._a = [1]
+        self._x = np.array([])
 
-        self._y = cp.array([])
+        self._y = np.array([])
 
     def __call__(self, x):
-        x_mixer_o = cp.multiply(x, self._lo)
-        self._y = filtfilt(self._b,self._a,x_mixer_o)
+        x_mixer_o = np.multiply(x, self._lo)
+        self._y = signal.filtfilt(self._b,self._a,x_mixer_o)
         return self._y,self._lo,x_mixer_o
+
+

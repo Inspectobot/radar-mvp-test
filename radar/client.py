@@ -1,8 +1,6 @@
 import ctypes as c
 import numpy as np
 
-import cupy as cp
-
 def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_frequencies = 101):
   class RadarProfile(c.LittleEndianStructure):
     _pack_ = 1
@@ -15,13 +13,13 @@ def CreateRadarProfile(number_of_channels = 2, num_samples = 101, number_of_freq
       d = np.empty((number_of_channels, number_of_frequencies, num_samples), dtype = np.float)
       ds.read_direct(d)
 
-      self._array = cp.asarray(d)
+      self._array = d
 
     def asArray(self):
       if hasattr(self, '_array'):
         return self._array
 
-      d = cp.array(self.data)
+      d = np.array(self.data)
       d = d.reshape(number_of_channels, number_of_frequencies, num_samples)
 
       self._array = d
