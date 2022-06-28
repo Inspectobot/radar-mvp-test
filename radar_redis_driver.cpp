@@ -450,10 +450,10 @@ void tcpDataServerTask() {
         //sched_yield();
 
         int bytes_read = read(sock_client);
-        printf("Bytes read from socket %s", bytes_read)
+        printf("Bytes read from socket %s", bytes_read);
 
         if (bytes_read > 0) {
-          printf("Read bytes, setting run sample flag")
+          printf("Read bytes, setting run sample flag");
           runSample = 1;
         }
       }
