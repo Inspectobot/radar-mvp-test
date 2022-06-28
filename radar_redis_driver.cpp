@@ -449,11 +449,15 @@ void tcpDataServerTask() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         //sched_yield();
 
-        int bytes_read = read(sock_client, 10);
-        printf("Bytes read from socket %d", bytes_read);
+
+        char buffer[1024] = { 0 };
+
+        int bytes_read = read(sock_client, buffer, 1024);
+        printf("Bytes read from socket %d \n", bytes_read);
+        printf("buffer value %s \n", buffer);
 
         if (bytes_read > 0) {
-          printf("Read bytes, setting run sample flag");
+          printf("Read bytes, setting run sample flag \n");
           runSample = 1;
         }
       }
