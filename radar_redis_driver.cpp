@@ -101,6 +101,8 @@ int channelCount = 2;
 
 static volatile int keepRunning = 1;
 
+static volatile int runSample = 0;
+
 struct ParametersMessage {
   uint32_t timestamp = 0;
 
@@ -444,8 +446,16 @@ void tcpDataServerTask() {
       struct RadarProfile* profile = nullptr;
 
       while(!profileBuffer.remove(profile)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
         //sched_yield();
+
+        int bytes_read = read(sock_client);
+        printf("Bytes read from socket %s", bytes_read)
+
+        if (bytes_read > 0) {
+          printf("Read bytes, setting run sample flag")
+          runSample = 1;
+        }
       }
 
       memcpy(data, profile, len);
@@ -645,6 +655,10 @@ int main (int argc, char **argv) {
   while(keepRunning) {
     int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
+    if (!runSample) {
+        std::this_thread::sleep_for(std::chrono::microseconds(10000));
+        continue;
+    }
     if(currentBufferIndex > (PROFILE_BUFFER_SIZE - 1)) currentBufferIndex = 0;
 
     profileBuffers[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
@@ -728,6 +742,8 @@ int main (int argc, char **argv) {
 
     currentBufferIndex++;
     int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+    runSample = 0; // don't run another sample until tcp socket triggers
 
     printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
