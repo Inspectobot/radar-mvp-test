@@ -199,13 +199,17 @@ class RadarService(object):
     async def start_line_scan(self, line_number, max_sweeps=100):
         """ Setup line scan radar controller, todo do this in a separate subproc"""
         self.line_index = line_number
-        if self.radar_process is not None:
-            logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
-            await asyncio.gather(*self.futures)
-            if self.radar_process.actual_num_sweeps > 0:
-                self.radar_process.save_image()
+
+        radar_proc_old = self.radar_process
         self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
         logger.info(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
+        if radar_proc_old is not None:
+            # do this to avoid race conditions without using locks (need to do before any awaits)
+            logger.info(f"existing radar service line {radar_proc_old.line_number} exists, saving")
+            await asyncio.gather(*self.futures)
+            if radar_proc_old.actual_num_sweeps > 0:
+                radar_proc_old.save_image()
+        #todo might still be a race condition here?
         self.proccess_futures = []
 
 
