@@ -183,8 +183,10 @@ class RadarService(object):
         logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
         self.proccess_futures = []
 
+
     async def process_scan(self):
         await asyncio.gather(*self.futures)
+        self.futures = []
         loop = asyncio.get_event_loop()
         def _run():
             self.radar_process.save_image()
