@@ -9,6 +9,7 @@ import os
 import datetime
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
 from radar.client import CreateRadarProfile
+from radar.makeimage import RadarProcess
 from concurrent.futures import ProcessPoolExecutor
 
 import matplotlib.pyplot as plot
@@ -27,6 +28,8 @@ import logging
 logger = logging.getLogger(__name__)
 import uvloop
 
+from collections import defaultdict,OrderedDict
+
 class RadarService(object):
     trajectoryRunning = False
     sweepCount = 0
@@ -44,6 +47,12 @@ class RadarService(object):
 
     tcp_server_coro = None
 
+    radar_process = None
+
+    def __init__(self):
+        self.data = defaultdict(list)
+        self.cached_data = defaultdict(list)
+
 
     async def async_init(self, restart_radar=False):
         self.rover_address = socket.gethostbyname(self.rover_name)
@@ -53,6 +62,8 @@ class RadarService(object):
         self.session = aiohttp.ClientSession()
         await self.refresh_params(restart_radar=restart_radar)
         self.tcp_server_coro = asyncio.start_server(self.tcp_rover_server, '0.0.0.0', 8888)
+
+        await self.start_line_scan(1) # setup default line scan
 
     async def refresh_params(self, restart_radar = False):
 
@@ -83,7 +94,7 @@ class RadarService(object):
         self.start_time = datetime.datetime.now().isoformat()
 
         for dir in ['out','img', 'raw']:
-            p = self.start_time + '/' + dir
+            p = 'output/' + self.start_time + '/' + dir
             os.makedirs(p)
             setattr(self, dir, p)
 
@@ -111,7 +122,7 @@ class RadarService(object):
                 logger.exception(f"took more than {timeout} seconds to get data")
                 return
 
-            except (EOFError, asyncio.streams.IncompleteReadError) as e:
+            except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
                 i+=1
                 logger.exception("failed to get radar data, broken socket, resetting")
                 await asyncio.sleep(0.1)
@@ -123,12 +134,20 @@ class RadarService(object):
         c.memmove(c.addressof(profile), data, c.sizeof(profile))
         print("sweep complete", profile.getSamplesAtIndex())
         pose = msgpack.unpackb(await self.redis.get('rover_pose'))
+        filename = f"{line_id}-{point_id or self.sweepCount}"
         if write_file:
-            self.write_profile(profile, pose, f"{line_id}-{point_id or self.sweepCount}")
+            filename = self.write_profile(profile, pose, filename)
+            #self.radar_process.process_sample(filename)
+
+
+        # todo what kind of indexing do we want to do  ?
+        self.data[line_id].append(dict(name=filename, **pose))
+        self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
         return profile
 
     def write_profile(self, profile, pose, file_suffix):
-        sweepFile = h5py.File(self.raw + f"/{file_suffix}.hdf5", "w")
+        filename = self.raw + f"/{file_suffix}.hdf5"
+        sweepFile = h5py.File(filename, "w")
         sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
                                                 (self.params['channelCount'],
                                                 self.params['frequencyCount'],
@@ -140,8 +159,27 @@ class RadarService(object):
         sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
         sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
         sweepDataSet.write_direct(profile.asArray())
+        return filename
 
 
+    # todo refactor radar controller secion to use multiple procs
+
+    async def process_scan(self, file_name):
+        """ process scan in-process, todo use subprocess"""
+        return self.radar_process.process_sample(file_name)
+
+    async def start_line_scan(self, line_number, max_sweeps=100):
+        """ Setup line scan radar controller, todo do this in a subprocess"""
+
+        if self.radar_process is not None:
+            logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
+        self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
+        logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
+
+    async def rest_process_scan(self, request):
+        self.radar_process.save_image()
+        self.radar.save_plots()
+        return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     async def get_data(self):
         while self.trajectoryRunning:
@@ -187,7 +225,8 @@ class RadarService(object):
 
     def to_dict(self):
         return {"running": self.trajectoryRunning,
-        "scanFile": self.scanFile, "sweepCount": self.sweepCount}
+        "scanFile": self.scanFile, "sweepCount": self.sweepCount,"output_dir":os.path.abspath(self.raw),
+         "data": self.data}
 
 
     async def rest_status(self, request):
@@ -231,7 +270,8 @@ class RadarService(object):
             aiohttp.web.get('/status', self.rest_status),
             aiohttp.web.get('/start', self.rest_start),
             aiohttp.web.get('/cancel', self.rest_cancel),
-            aiohttp.web.get('/scan', self.rest_trigger_scan)
+            aiohttp.web.get('/scan', self.rest_trigger_scan),
+            aiohttp.web.get('/proc', self.rest_process_scan)
             ])
 
         self.http_runner = aiohttp.web.AppRunner(self.http_app)
@@ -265,14 +305,6 @@ class RadarService(object):
         loop.run_until_complete(self.http_server())
 
 
-async def main_aio():
-    radar = RadarService()
-    await radar.async_init()
-    radar.trajectoryRunning = True
-    await radar.get_data()
-
-
-
 
 
 if __name__ == '__main__':
@@ -292,66 +324,3 @@ if __name__ == '__main__':
     #     loop.stop()
     # loop.set_exception_handler(exception_handler)
     # loop.run_until_complete(main_aio())
-
-async def main():
-    r = aioredis.from_url("redis://inspectobot-rover.local")
-    p = r.pubsub()
-
-    params = msgpack.unpackb(await r.get('radar_parameters'))
-    RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('inspectobot-rover.local', 1001)
-
-    sock.connect(server_address)
-
-    trajectoryRunning = False
-    sweepCount = 0
-    scanFileName = None
-    scanFile = None
-    def roverControllerEvent(message):
-      global trajectoryRunning, sweepCount, scanFileName, scanFile
-
-      msg = message['data'].decode('utf-8')
-      print("Received event: ", msg)
-
-      if(msg == "runActiveTrajectory"):
-          trajectoryRunning = True
-          sweepCount = 0
-
-          scanFileName = "scan-" + str(int(time.time())) + ".hdf5"
-          scanFile = h5py.File(scanFileName, "w")
-
-          print("Started scan: " + scanFileName)
-      elif(msg == "trajectoryComplete"):
-          trajectoryRunning = False
-          scanFile.close()
-          scanFile = None
-
-          print("Scan complete: " + scanFileName)
-          print("Total sweeps: " + str(sweepCount))
-      else:
-          trajectoryRunning = False
-
-      while trajectoryRunning:
-        profile = RadarProfile()
-
-        data = sock.recv(c.sizeof(RadarProfile()), socket.MSG_WAITALL)
-        c.memmove(c.addressof(profile), data, c.sizeof(profile))
-
-        sweepDataSet = scanFile.create_dataset('sweep-' + str(sweepCount), (params['channelCount'], params['frequencyCount'], params['sampleCount']), dtype='f')
-        for key in params:
-          sweepDataSet.attrs[key] = params[key]
-
-        pose = msgpack.unpackb(r.get('rover_pose'))
-
-        sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
-        sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
-
-        sweepDataSet.write_direct(profile.asArray())
-        sweepCount += 1
-
-        message = p.get_message()
-
-    p.subscribe(**{'rover_controller': roverControllerEvent})
-    thread = p.run_in_thread(sleep_time=0.001)

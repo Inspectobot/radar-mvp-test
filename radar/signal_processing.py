@@ -60,12 +60,13 @@ class LowPassFilter():
 
 class IQDemodulator():
     def __init__(self,f_lo=31e6,fc=1e6,ft=0.1e6,number_of_taps=128,fs=122.88e6,t_sample=1e-6, n = 16384):
+        ts=1e-6,
         self._f_lo=f_lo
         self._fc = fc
         self._ft= ft
         self._number_of_taps=number_of_taps
         self._fs=fs
-        self._Ts=1/self._fs
+        #self._Ts=1/self._fs
         self._t_sample = t_sample
         self._n=n
 
@@ -86,5 +87,3 @@ class IQDemodulator():
         x_mixer_o = np.multiply(x, self._lo)
         self._y = signal.filtfilt(self._b,self._a,x_mixer_o)
         return self._y,self._lo,x_mixer_o
-
-
