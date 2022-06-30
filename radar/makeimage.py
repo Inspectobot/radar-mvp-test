@@ -91,10 +91,10 @@ class RadarProcess(object):
 
 
 
-    def process_sample(self, radar_file):
+    def process_sample(self, radar_file, sweep_num=None):
         """ Todo process from in-memory array instead of hdf5 """
 
-        sweep = self.actual_num_sweeps
+        sweep = sweep_num or self.actual_num_sweeps
         data_set = h5.File(radar_file ,'r')
         data_i = data_set['sweep_data_raw']
         print(f"sweep={sweep} file={radar_file}")
@@ -148,7 +148,10 @@ class RadarProcess(object):
             plt.close()
 
     def save_image(self):
-        os.makedirs('img/output')
+        try:
+            os.makedirs('img')
+        except:
+            pass
         num_sweeps = self.actual_num_sweeps
 
         rdr_real = np.real(self.proc_data[:num_sweeps, :200])
@@ -185,7 +188,7 @@ def main():
     try:
         import redis
         import msgpack
-        r = redis.Redis(host='inspectobot-rover.local', timeout=0.01)
+        r = redis.Redis(host='inspectobot-rover.local', socket_timeout=0.01)
         params = msgpack.unpackb(r.get('radar_parameters'))
     except Exception as e:
         logger.exception("failed to get params from redis, using first file")

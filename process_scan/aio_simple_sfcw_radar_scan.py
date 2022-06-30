@@ -26,6 +26,7 @@ import msgpack
 import aiohttp
 import logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 import uvloop
 
 from collections import defaultdict,OrderedDict
@@ -99,7 +100,10 @@ class RadarService(object):
 
         for dir in ['out','img', 'raw']:
             p = 'output/' + self.start_time + '/' + dir
-            os.makedirs(p)
+            try:
+                os.makedirs(p)
+            except:
+                pass
             setattr(self, dir, p)
 
         #hacky thing because it doesn't respond on first profile
