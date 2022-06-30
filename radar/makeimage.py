@@ -3,6 +3,7 @@ import os
 import inspect
 import argparse
 import glob
+import datetime
 
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -93,7 +94,7 @@ class RadarProcess(object):
 
     def process_sample(self, radar_file, sweep_num=None, radar_hdf5_file=None):
         """ Todo process from in-memory array instead of hdf5 """
-
+        start = datetime.datetime.now()
         sweep = sweep_num or self.actual_num_sweeps
         if radar_hdf5_file:
             data_set = radar_hdf5_file
@@ -111,15 +112,17 @@ class RadarProcess(object):
                 bb_mixer = np.multiply(dut_iq,np.conj(ref_iq))
                 bb,_= self.bb_filter(bb_mixer)
                 self.raw_data[sweep,i]=np.mean(bb[100:self.num_samples//2])
-        print(self.raw_data[sweep])
         #Range compression
         self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
         self.actual_num_sweeps+=1
         data_set.close()
-        logger.info(f"done processing {radar_file}")
+        seconds = (datetime.datetime.now() - start).total_seconds()
+        logger.info(f"done processing {radar_file} taken {seconds} seconds")
+
 
 
     def save_plots(self):
+        logger.warn("Saving plots")
         for dir in ['iq', 'amp']:
             try:
                 os.makedirs(f'output/radar/{dir}')
@@ -154,6 +157,7 @@ class RadarProcess(object):
             plt.close()
 
     def save_image(self):
+        logger.warn("Saving plots")
         try:
             os.makedirs('img')
         except:

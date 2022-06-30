@@ -197,6 +197,7 @@ class RadarService(object):
 
         if self.radar_process is not None:
             logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
+            await asyncio.gather(*self.futures)
             if self.radar_process.actual_num_sweeps > 0:
                 self.radar_process.save_image()
         self.line_index = line_number
