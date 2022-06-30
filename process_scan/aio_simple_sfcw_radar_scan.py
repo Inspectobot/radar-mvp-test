@@ -6,6 +6,10 @@ import sys
 sys.path.append("..")
 import os
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 import datetime
 from radar.signal_processing import BandPassFilter, LowPassFilter, IQDemodulator
 from radar.client import CreateRadarProfile
@@ -55,6 +59,8 @@ class RadarService(object):
 
     radar_process = None
 
+    line_index = 0
+
     def __init__(self):
         self.data = defaultdict(list)
         self.cached_data = defaultdict(list)
@@ -69,7 +75,7 @@ class RadarService(object):
         await self.refresh_params(restart_radar=restart_radar)
         self.tcp_server_coro = asyncio.start_server(self.tcp_rover_server, '0.0.0.0', 8888)
 
-        await self.start_line_scan(1) # setup default line scan
+        await self.start_line_scan(self.line_index) # setup default line scan
 
     async def refresh_params(self, restart_radar = False):
 
@@ -188,6 +194,8 @@ class RadarService(object):
 
         if self.radar_process is not None:
             logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
+            self.radar_process.save_image()
+        self.line_index = line_number
         self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
         logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
         self.proccess_futures = []
@@ -252,6 +260,9 @@ class RadarService(object):
     async def rest_trigger_scan(self, request):
         logger.error(dict(request.rel_url.query))
         params = dict(request.rel_url.query)
+        line_number = params.get('lineIndex')
+        if line_number and int(line_number) != self.line_index:
+            self.start_line_scan(line_number)
         await self.get_data_single(point_id=params.get('lineIndex'), line_id=params.get('lineIndex'))
         return aiohttp.web.json_response(self.to_dict())
 
