@@ -189,7 +189,7 @@ class RadarService(object):
             _run()
         else:
             loop = asyncio.get_event_loop()
-            logger.info(f"Queuing {file_name} for processing")
+            logger.info(f"Queuing {filename} for processing")
             self.futures.append(loop.run_in_executor(self.executor, _run))
 
 
