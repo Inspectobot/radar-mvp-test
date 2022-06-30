@@ -165,9 +165,9 @@ class RadarService(object):
         return profile
 
     async def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True, sync=False):
+        filename = self.raw + f"/{file_suffix}.hdf5"
 
         def _run():
-            filename = self.raw + f"/{file_suffix}.hdf5"
             sweepFile = h5py.File(filename, "w")
             sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
                                                     (self.params['channelCount'],
