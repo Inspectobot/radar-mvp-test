@@ -119,9 +119,9 @@ class RadarService(object):
         while True:
             i = 0
             try:
-                if i > 4:
+                if i > 3:
                     logger.error("too many attempts to retry radar")
-                    return
+                    raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
                 self.radar_writer.write(b"send")
                 await self.radar_writer.drain()
                 data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
@@ -129,7 +129,6 @@ class RadarService(object):
 
             except asyncio.TimeoutError:
                 logger.exception(f"took more than {timeout} seconds to get data")
-                return
 
             except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
                 i+=1
@@ -252,7 +251,8 @@ class RadarService(object):
 
     async def rest_trigger_scan(self, request):
         logger.error(dict(request.rel_url.query))
-        await self.get_data_single()
+        params = dict(request.rel_url.query)
+        await self.get_data_single(point_id=params.get('lineIndex'), line_id=params.get('lineIndex'))
         return aiohttp.web.json_response(self.to_dict())
 
 
