@@ -5,7 +5,8 @@ import ctypes as c
 import sys
 sys.path.append("..")
 import os
-
+import matplotlib
+matplotlib.use("Agg")
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
