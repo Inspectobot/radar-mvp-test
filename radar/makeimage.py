@@ -1,12 +1,23 @@
 import sys
 import os
 import inspect
+import argparse
+import glob
+
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
+import os
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 import h5py as h5
 from radar.signal_processing_alan import LowPassFilter,IQDemodulator,BandPassFilter
@@ -102,6 +113,8 @@ class RadarProcess(object):
         self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
         self.actual_num_sweeps+=1
         data_set.close()
+        logger.info(f"done processing {radar_file}")
+
 
     def save_plots(self):
         for dir in ['iq', 'amp']:
@@ -135,6 +148,7 @@ class RadarProcess(object):
             plt.close()
 
     def save_image(self):
+        os.makedirs('img/output')
         num_sweeps = self.actual_num_sweeps
 
         rdr_real = np.real(self.proc_data[:num_sweeps, :200])
@@ -142,10 +156,10 @@ class RadarProcess(object):
 
         #without bg subtraction
         plt.figure(figsize=(16,8))
-        plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,20,self.r_max-2,-2])
+        plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
-        plt.savefig('radar_image_raw_real.jpg')
+        plt.savefig(f'img/raw_real-line-{self.line_number}.jpg')
 
         #bg subtraction
 
@@ -161,4 +175,29 @@ class RadarProcess(object):
         plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
-        plt.savefig('radar_image_raw_real_bg_removed.jpg')
+        plt.savefig(f'img/raw_real_bg_removed-line-{self.line_number}.jpg')
+
+def main():
+    parser = argparse.ArgumentParser(description='Run a sweep or process and view saved sweep data.')
+    parser.add_argument('-d', '--data-file-path', type=str, default='/Users/ian/projects/radar-mvp-test/process_scan/output/2022-06-29T21:52:24.415070/raw/*.hdf5',
+                            help="path to data files to read")
+    args = parser.parse_args()
+    try:
+        import redis
+        import msgpack
+        r = redis.Redis(host='inspectobot-rover.local', timeout=0.01)
+        params = msgpack.unpackb(r.get('radar_parameters'))
+    except Exception as e:
+        logger.exception("failed to get params from redis, using first file")
+        params = {"timestamp":0,"startFrequency":1500,"stepFrequency":20,"frequencyCount":151,"intermediateFreq":32,"transmitPower":-10,"loPower":15,"sampleCount":2048,"channelCount":2,"stepTriggerTimeInMicro":50,"synthWarmupTimeInMicro":5000000,"settlingTimeInMicro":500,"bufferSampleDelay":0}
+
+    file_list = sorted(glob.glob(args.data_file_path))
+
+    radar = RadarProcess(**params, line_number=1)
+
+    for file_name in file_list:
+        radar.process_sample(file_name)
+    radar.save_image()
+
+if __name__ == '__main__':
+    main()

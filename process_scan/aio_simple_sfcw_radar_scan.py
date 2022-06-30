@@ -185,6 +185,8 @@ class RadarService(object):
 
 
     async def process_scan(self):
+
+        # Is this a race condition?  Maybe we need to asyncio lock this operation ?
         await asyncio.gather(*self.futures)
         self.futures = []
         loop = asyncio.get_event_loop()
