@@ -172,7 +172,7 @@ class RadarProcess(object):
         plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
-        plt.savefig(f'img/raw_real-line-{self.line_number}.jpg')
+        plt.savefig(f'img/raw_real-line-{self.line_number}.png')
 
         #bg subtraction
 
@@ -188,7 +188,7 @@ class RadarProcess(object):
         plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
-        plt.savefig(f'img/raw_real_bg_removed-line-{self.line_number}.jpg')
+        plt.savefig(f'img/raw_real_bg_removed-line-{self.line_number}.png')
 
 def main():
     parser = argparse.ArgumentParser(description='Run a sweep or process and view saved sweep data.')
