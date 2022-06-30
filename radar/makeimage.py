@@ -117,7 +117,7 @@ class RadarProcess(object):
         self.actual_num_sweeps+=1
         data_set.close()
         seconds = (datetime.datetime.now() - start).total_seconds()
-        logger.info(f"done processing {radar_file} taken {seconds} seconds")
+        logger.warn(f"done processing {radar_file} taken {seconds} seconds")
 
 
 

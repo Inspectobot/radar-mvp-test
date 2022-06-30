@@ -33,7 +33,7 @@ import msgpack
 import aiohttp
 import logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 import uvloop
 
 from collections import defaultdict,OrderedDict
@@ -266,9 +266,10 @@ class RadarService(object):
         logger.error(dict(request.rel_url.query))
         params = dict(request.rel_url.query)
         line_number = params.get('lineIndex')
+        sample_index = params.get('sampleIndex')
         if line_number and int(line_number) != self.line_index:
             await self.start_line_scan(line_number)
-        await self.get_data_single(point_id=params.get('lineIndex'), line_id=params.get('lineIndex'))
+        await self.get_data_single(point_id=sample_index, line_id=line_number)
         return aiohttp.web.json_response(self.to_dict())
 
 
