@@ -151,7 +151,11 @@ class RadarService(object):
         c.memmove(c.addressof(profile), data, c.sizeof(profile))
         print("sweep complete", profile.getSamplesAtIndex())
         pose = msgpack.unpackb(await self.redis.get('rover_pose'))
-        filename = f"{line_id}-{point_id or self.sweepCount}"
+        if point_id or point_id==0:
+            pass
+        else:
+            point_id = self.sweepCount
+        filename = f"{line_id}-{point_id}"
         if write_file:
             await self.write_profile(profile, pose, filename)
 
