@@ -41,7 +41,8 @@ class RadarService(object):
     scanFileName = None
     scanFile = None
 
-    rover_name ='inspectobot-rover.local'
+    radar_address = 'radar'
+    rover_address ='localhost'
 
     http_port = 9005
     http_address='0.0.0.0'
@@ -60,7 +61,7 @@ class RadarService(object):
         self.futures = []
 
     async def async_init(self, restart_radar=False):
-        self.rover_address = socket.gethostbyname(self.rover_name)
+        self.rover_address = socket.gethostbyname(self.rover_address)
 
         self.redis = aioredis.from_url(f"redis://{self.rover_address}")
         self.pubsub = self.redis.pubsub()
@@ -75,20 +76,20 @@ class RadarService(object):
         params = self.params = msgpack.unpackb(await self.redis.get('radar_parameters'))
         self.RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
         if restart_radar:
-            async with self.session.get(f"http://{self.rover_address}:8081/restart"):
+            async with self.session.get(f"http://{self.radar_address}:8081/restart"):
                 pass
             await asyncio.sleep(15)
 
         while True:
             try:
-                self.radar_reader, self.radar_writer = await asyncio.open_connection(self.rover_address, 1001)
+                self.radar_reader, self.radar_writer = await asyncio.open_connection(self.radar_address, 1001)
                 break
 
             except Exception as e:
                 if "Connection" in str(e):
                     logger.exception("connection error, restarting")
                     try:
-                        async with self.session.get(f"http://{self.rover_address}:8081/restart"):
+                        async with self.session.get(f"http://{self.radar_address}:8081/restart"):
                             pass
                     except:
                         logger.exception("Unable to restart radar server, sleeping")
