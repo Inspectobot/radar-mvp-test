@@ -194,7 +194,8 @@ class RadarService(object):
 
         if self.radar_process is not None:
             logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
-            self.radar_process.save_image()
+            if self.radar_process.actual_num_sweeps > 0:
+                self.radar_process.save_image()
         self.line_index = line_number
         self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
         logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
