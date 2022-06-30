@@ -57,7 +57,7 @@ class RadarService(object):
     def __init__(self):
         self.data = defaultdict(list)
         self.cached_data = defaultdict(list)
-
+        self.futures = []
 
     async def async_init(self, restart_radar=False):
         self.rover_address = socket.gethostbyname(self.rover_name)
@@ -144,43 +144,44 @@ class RadarService(object):
         pose = msgpack.unpackb(await self.redis.get('rover_pose'))
         filename = f"{line_id}-{point_id or self.sweepCount}"
         if write_file:
-            self.write_profile(profile, pose, filename)
+            await self.write_profile(profile, pose, filename)
 
         # todo what kind of indexing do we want to do  ?
         self.data[line_id].append(dict(name=filename, **pose))
         self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
         return profile
 
-    def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True):
-        filename = self.raw + f"/{file_suffix}.hdf5"
-        sweepFile = h5py.File(filename, "w")
-        sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
-                                                (self.params['channelCount'],
-                                                self.params['frequencyCount'],
-                                                self.params['sampleCount']), dtype='f')
+    async def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True, sync=False):
 
-        for key in self.params:
-          sweepDataSet.attrs[key] = self.params[key]
+        def _run():
+            filename = self.raw + f"/{file_suffix}.hdf5"
+            sweepFile = h5py.File(filename, "w")
+            sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
+                                                    (self.params['channelCount'],
+                                                    self.params['frequencyCount'],
+                                                    self.params['sampleCount']), dtype='f')
 
-        sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
-        sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
-        sweepDataSet.write_direct(profile.asArray())
-        
-        if proc:
-            self.radar_process.process_sample(filename, sweep_none=sweep_num, radar_hdf5_file=sweepFile)
-        else:
+            for key in self.params:
+              sweepDataSet.attrs[key] = self.params[key]
+
+            sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
+            sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
+            sweepDataSet.write_direct(profile.asArray())
             sweepFile.close()
+            if proc:
+                self.radar_process.process_sample(filename, sweep_num)
 
-        return filename
+            return filename
+        if sync:
+            _run()
+        else:
+            loop = asyncio.get_event_loop()
+            logger.error("Queuing {file_name} for processing")
+            self.futures.append(loop.run_in_executor(self.executor, _run))
+
 
 
     # todo refactor radar controller secion to use multiple procs instead of threads
-
-    async def process_scan(self, file_name):
-        """ process scan in-process, want to test thread performance vs subproc"""
-        loop = asyncio.get_event_loop()
-        logger.error("Queuing {file_name} for processing")
-        self.futures.append(loop.run_in_executor(self.executor, self.radar_process.process_sample, file_name))
 
     async def start_line_scan(self, line_number, max_sweeps=100):
         """ Setup line scan radar controller, todo do this in a separate subproc"""
@@ -194,6 +195,7 @@ class RadarService(object):
 
     async def process_scan(self):
 
+
         # Is this a race condition?  Maybe we need to asyncio lock this operation ?
         await asyncio.gather(*self.futures)
         self.futures = []
@@ -201,9 +203,13 @@ class RadarService(object):
         def _run():
             self.radar_process.save_image()
             self.radar_process.save_plots()
-        return await loop.run_in_executor(self.executor, _run)
+        #todo can't run matplotlib in thread
+        #return await loop.run_in_executor(self.executor, _run)
+        return _run()
 
     async def rest_process_scan(self, request):
+        logger.error(dict(request.rel_url.query))
+
         await self.process_scan()
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
@@ -244,7 +250,7 @@ class RadarService(object):
 
 
     async def rest_trigger_scan(self, request):
-
+        logger.error(dict(request.rel_url.query))
         await self.get_data_single()
         return aiohttp.web.json_response(self.to_dict())
 

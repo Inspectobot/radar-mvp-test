@@ -121,7 +121,10 @@ class RadarProcess(object):
 
     def save_plots(self):
         for dir in ['iq', 'amp']:
-            os.makedirs('output/radar/{dir}')
+            try:
+                os.makedirs(f'output/radar/{dir}')
+            except:
+                pass
 
         for sweep in range(self.actual_num_sweeps):
             z = self.proc_data[sweep,:];
@@ -136,7 +139,7 @@ class RadarProcess(object):
             plt.xlim([0,2])
             plt.ylim([-2.5e-8,2.5e-8])
             plt.title(f'Range profile IQ (envelope for sweep={sweep}')
-            plt.savefig(f'./output/radar/iq/iq-sweep-{sweep}.png')
+            plt.savefig(f'output/radar/iq/iq-sweep-{sweep}.png')
             plt.close()
 
             plt.figure(2)
@@ -147,7 +150,7 @@ class RadarProcess(object):
             plt.xlim([0,2])
             plt.ylim([0,2.5e-8])
             plt.title(f'Range profile amplitude for sweep={sweep}')
-            plt.savefig(f'./output/radar/amp/amp-sweep-{sweep}.png')
+            plt.savefig(f'output/radar/amp/amp-sweep-{sweep}.png')
             plt.close()
 
     def save_image(self):
