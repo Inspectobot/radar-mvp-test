@@ -5,10 +5,10 @@ import ctypes as c
 import sys
 sys.path.append("..")
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
 
 import matplotlib
 matplotlib.use("Agg")
@@ -189,7 +189,7 @@ class RadarService(object):
             _run()
         else:
             loop = asyncio.get_event_loop()
-            logger.info("Queuing {file_name} for processing")
+            logger.info(f"Queuing {file_name} for processing")
             self.futures.append(loop.run_in_executor(self.executor, _run))
 
 
