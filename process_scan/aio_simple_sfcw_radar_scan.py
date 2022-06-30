@@ -280,8 +280,8 @@ class RadarService(object):
     async def rest_trigger_scan(self, request):
         logger.error(dict(request.rel_url.query))
         params = dict(request.rel_url.query)
-        #line_number = int(params.get('lineIndex', 0))
-        line_number = int(params.get('patternIndex', 0))
+        line_number = int(params.get('lineIndex', 0))
+        #line_number = int(params.get('patternIndex', 0))
         sample_index = int(params.get('sampleIndex', 0))
         if line_number and int(line_number) != self.line_index:
             await self.start_line_scan(line_number)
@@ -290,6 +290,17 @@ class RadarService(object):
 
 
     async def reset_process(self):
+
+        """ Params:   reset_radar: Bollean (if sent as a parameter, will recconect to radar default False)
+                      reset_data: Boolean """
+        logger.error(dict(request.rel_url.query))
+        params = dict(request.rel_url.query)
+
+        reset_radar = False
+        if params.get('reset_radar'):
+            reset_radar = True
+        self.reset_data()
+        await self.refresh_params(reset_radar_connection=reset_radar)
         pass
 
 
