@@ -262,7 +262,7 @@ class RadarService(object):
         params = dict(request.rel_url.query)
         line_number = params.get('lineIndex')
         if line_number and int(line_number) != self.line_index:
-            self.start_line_scan(line_number)
+            await self.start_line_scan(line_number)
         await self.get_data_single(point_id=params.get('lineIndex'), line_id=params.get('lineIndex'))
         return aiohttp.web.json_response(self.to_dict())
 
