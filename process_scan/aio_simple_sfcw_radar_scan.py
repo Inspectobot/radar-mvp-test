@@ -62,12 +62,17 @@ class RadarService(object):
 
     radar_process = None
 
-    line_index = 0
+
 
     def __init__(self):
+        self.reset_data()
+
+    def reset_data(self):
         self.data = defaultdict(list)
         self.cached_data = defaultdict(list)
         self.futures = []
+
+        self.line_index = 0
 
     async def async_init(self, restart_radar=False):
         self.rover_address = socket.gethostbyname(self.rover_address)
@@ -80,7 +85,7 @@ class RadarService(object):
 
         await self.start_line_scan(self.line_index) # setup default line scan
 
-    async def refresh_params(self, restart_radar = False):
+    async def refresh_params(self, restart_radar = False, reset_radar_connection=True):
 
         params = self.params = msgpack.unpackb(await self.redis.get('radar_parameters'))
         self.RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
@@ -89,22 +94,23 @@ class RadarService(object):
                 pass
             await asyncio.sleep(15)
 
-        while True:
-            try:
-                self.radar_reader, self.radar_writer = await asyncio.open_connection(self.radar_address, 1001)
-                break
+        if reset_radar_connection:
+            while True:
+                try:
+                    self.radar_reader, self.radar_writer = await asyncio.open_connection(self.radar_address, 1001)
+                    break
 
-            except Exception as e:
-                if "Connection" in str(e):
-                    logger.exception("connection error, restarting")
-                    try:
-                        async with self.session.get(f"http://{self.radar_address}:8081/restart"):
-                            pass
-                    except:
-                        logger.exception("Unable to restart radar server, sleeping")
-                    await asyncio.sleep(15)
-                else:
-                    raise e
+                except Exception as e:
+                    if "Connection" in str(e):
+                        logger.exception("connection error, restarting")
+                        try:
+                            async with self.session.get(f"http://{self.radar_address}:8081/restart"):
+                                pass
+                        except:
+                            logger.exception("Unable to restart radar server, sleeping")
+                        await asyncio.sleep(15)
+                    else:
+                        raise e
 
         self.start_time = datetime.datetime.now().isoformat()
 
@@ -233,50 +239,62 @@ class RadarService(object):
         await self.process_scan()
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
-    async def get_data(self):
-        while self.trajectoryRunning:
-            try:
-                profile = await self.get_data_single()
-            except  asyncio.TimeoutError:
-                print("more than 5 secs for data")
-                continue
-            pose = msgpack.unpackb(await self.redis.get('rover_pose'))
-            print("sweep complete", profile.getSamplesAtIndex())
+    #not used with triggering mode
+    # async def get_data(self):
+    #     while self.trajectoryRunning:
+    #         try:
+    #             profile = await self.get_data_single()
+    #         except  asyncio.TimeoutError:
+    #             print("more than 5 secs for data")
+    #             continue
+    #         pose = msgpack.unpackb(await self.redis.get('rover_pose'))
+    #         print("sweep complete", profile.getSamplesAtIndex())
 
 
+    ## Not used with triggering mode
+    # async def rest_start(self, request):
+    #     if not self.trajectoryRunning:
+    #         try:
+    #             await self.run_data_coro
+    #         except:
+    #             pass
+    #         self.trajectoryRunning = True
+    #         self.run_data_coro = asyncio.ensure_future(self.get_data())
+    #         await asyncio.sleep(1)
+    #         return aiohttp.web.json_response(self.to_dict())
+    #
+    #     else:
+    #         return aiohttp.web.json_response({"error": "Currently running, please cancel"})
 
-    async def rest_start(self, request):
-        if not self.trajectoryRunning:
-            try:
-                await self.run_data_coro
-            except:
-                pass
-            self.trajectoryRunning = True
-            self.run_data_coro = asyncio.ensure_future(self.get_data())
-            await asyncio.sleep(1)
-            return aiohttp.web.json_response(self.to_dict())
-
-        else:
-            return aiohttp.web.json_response({"error": "Currently running, please cancel"})
-
-    async def rest_cancel(self, request):
-
-        self.trajectoryRunning = False
-        try:
-            await self.run_data_coro
-        except:
-            pass
-        return aiohttp.web.json_response(self.to_dict())
+    ## Not used with triggering mode
+    # async def rest_cancel(self, request):
+    #
+    #     self.trajectoryRunning = False
+    #     try:
+    #         await self.run_data_coro
+    #     except:
+    #         pass
+    #     return aiohttp.web.json_response(self.to_dict())
 
 
     async def rest_trigger_scan(self, request):
         logger.error(dict(request.rel_url.query))
         params = dict(request.rel_url.query)
-        line_number = int(params.get('lineIndex', 0))
+        #line_number = int(params.get('lineIndex', 0))
+        line_number = int(params.get('patternIndex', 0))
         sample_index = int(params.get('sampleIndex', 0))
         if line_number and int(line_number) != self.line_index:
             await self.start_line_scan(line_number)
         await self.get_data_single(point_id=sample_index, line_id=line_number)
+        return aiohttp.web.json_response(self.to_dict())
+
+
+    async def reset_process(self):
+        pass
+
+
+    async def rest_reset(self, request):
+        await self.reset_process()
         return aiohttp.web.json_response(self.to_dict())
 
 
@@ -325,8 +343,8 @@ class RadarService(object):
         self.http_app = aiohttp.web.Application()
         self.http_app.add_routes([
             aiohttp.web.get('/status', self.rest_status),
-            aiohttp.web.get('/start', self.rest_start),
-            aiohttp.web.get('/cancel', self.rest_cancel),
+            #aiohttp.web.get('/start', self.rest_start),
+            #aiohttp.web.get('/cancel', self.rest_cancel),
             aiohttp.web.get('/scan', self.rest_trigger_scan),
             aiohttp.web.get('/proc', self.rest_process_scan)
             ])
