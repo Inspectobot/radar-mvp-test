@@ -68,7 +68,7 @@ class RadarProcess(object):
         self.r = np.linspace(0,self.r_max,self.M)
 
 
-        self.window = np.kaiser(self.num_samples, 6)
+        self.window = np.kaiser(self.number_of_frequencies, 6)
 
         self.allocate_dataset(maxNumSweeps)
 

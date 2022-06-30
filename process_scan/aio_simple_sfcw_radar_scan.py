@@ -30,6 +30,10 @@ import uvloop
 
 from collections import defaultdict,OrderedDict
 
+
+from concurrent.futures import ThreadPoolExecutor
+
+
 class RadarService(object):
     trajectoryRunning = False
     sweepCount = 0
@@ -41,7 +45,7 @@ class RadarService(object):
     http_port = 9005
     http_address='0.0.0.0'
 
-    executor = ProcessPoolExecutor(max_workers=2)
+    executor = ThreadPoolExecutor(max_workers=2)
 
     run_data_coro = None
 
@@ -136,9 +140,7 @@ class RadarService(object):
         pose = msgpack.unpackb(await self.redis.get('rover_pose'))
         filename = f"{line_id}-{point_id or self.sweepCount}"
         if write_file:
-            filename = self.write_profile(profile, pose, filename)
-            #self.radar_process.process_sample(filename)
-
+            self.write_profile(profile, pose, filename)
 
         # todo what kind of indexing do we want to do  ?
         self.data[line_id].append(dict(name=filename, **pose))
@@ -159,26 +161,38 @@ class RadarService(object):
         sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
         sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
         sweepDataSet.write_direct(profile.asArray())
+        sweepFile.close()
+        self.radar_process.process_sample(filename)
         return filename
 
 
-    # todo refactor radar controller secion to use multiple procs
+    # todo refactor radar controller secion to use multiple procs instead of threads
 
     async def process_scan(self, file_name):
-        """ process scan in-process, todo use subprocess"""
-        return self.radar_process.process_sample(file_name)
+        """ process scan in-process, want to test thread performance vs subproc"""
+        loop = asyncio.get_event_loop()
+        logger.error("Queuing {file_name} for processing")
+        self.futures.append(loop.run_in_executor(self.executor, self.radar_process.process_sample, file_name))
 
     async def start_line_scan(self, line_number, max_sweeps=100):
-        """ Setup line scan radar controller, todo do this in a subprocess"""
+        """ Setup line scan radar controller, todo do this in a separate subproc"""
 
         if self.radar_process is not None:
             logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
         self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
         logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
+        self.proccess_futures = []
+
+    async def process_scan(self):
+        await asyncio.gather(*self.futures)
+        loop = asyncio.get_event_loop()
+        def _run():
+            self.radar_process.save_image()
+            self.radar_process.save_plots()
+        return await loop.run_in_executor(self.executor, _run)
 
     async def rest_process_scan(self, request):
-        self.radar_process.save_image()
-        self.radar.save_plots()
+        await self.process_scan()
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     async def get_data(self):
