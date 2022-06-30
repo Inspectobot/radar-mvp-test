@@ -185,7 +185,7 @@ class RadarService(object):
             _run()
         else:
             loop = asyncio.get_event_loop()
-            logger.error("Queuing {file_name} for processing")
+            logger.info("Queuing {file_name} for processing")
             self.futures.append(loop.run_in_executor(self.executor, _run))
 
 
@@ -194,15 +194,14 @@ class RadarService(object):
 
     async def start_line_scan(self, line_number, max_sweeps=100):
         """ Setup line scan radar controller, todo do this in a separate subproc"""
-
+        self.line_index = line_number
         if self.radar_process is not None:
             logger.info("existing radar service line {self.radar_service.line_number} exists, overwritting")
             await asyncio.gather(*self.futures)
             if self.radar_process.actual_num_sweeps > 0:
                 self.radar_process.save_image()
-        self.line_index = line_number
         self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
-        logger.error(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
+        logger.info(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
         self.proccess_futures = []
 
 
@@ -221,7 +220,7 @@ class RadarService(object):
         return _run()
 
     async def rest_process_scan(self, request):
-        logger.error(dict(request.rel_url.query))
+        logger.info(dict(request.rel_url.query))
 
         await self.process_scan()
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
@@ -265,8 +264,8 @@ class RadarService(object):
     async def rest_trigger_scan(self, request):
         logger.error(dict(request.rel_url.query))
         params = dict(request.rel_url.query)
-        line_number = params.get('lineIndex')
-        sample_index = params.get('sampleIndex')
+        line_number = int(params.get('lineIndex', 0))
+        sample_index = int(params.get('sampleIndex', 0))
         if line_number and int(line_number) != self.line_index:
             await self.start_line_scan(line_number)
         await self.get_data_single(point_id=sample_index, line_id=line_number)
