@@ -91,11 +91,14 @@ class RadarProcess(object):
 
 
 
-    def process_sample(self, radar_file, sweep_num=None):
+    def process_sample(self, radar_file, sweep_num=None, radar_hdf5_file=None):
         """ Todo process from in-memory array instead of hdf5 """
 
         sweep = sweep_num or self.actual_num_sweeps
-        data_set = h5.File(radar_file ,'r')
+        if radar_hdf5_file:
+            data_set = radar_hdf5_file
+        else:
+            data_set = h5.File(radar_file ,'r')
         data_i = data_set['sweep_data_raw']
         print(f"sweep={sweep} file={radar_file}")
         for i in range(int(self.number_of_frequencies)):

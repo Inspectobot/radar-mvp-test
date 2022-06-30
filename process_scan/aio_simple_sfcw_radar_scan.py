@@ -151,7 +151,7 @@ class RadarService(object):
         self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
         return profile
 
-    def write_profile(self, profile, pose, file_suffix):
+    def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True):
         filename = self.raw + f"/{file_suffix}.hdf5"
         sweepFile = h5py.File(filename, "w")
         sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
@@ -165,8 +165,12 @@ class RadarService(object):
         sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
         sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
         sweepDataSet.write_direct(profile.asArray())
-        sweepFile.close()
-        self.radar_process.process_sample(filename)
+        
+        if proc:
+            self.radar_process.process_sample(filename, sweep_none=sweep_num, radar_hdf5_file=sweepFile)
+        else:
+            sweepFile.close()
+
         return filename
 
 
