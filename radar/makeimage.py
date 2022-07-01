@@ -5,6 +5,7 @@ import argparse
 import glob
 import datetime
 import h5py
+import shutil
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
@@ -35,7 +36,7 @@ class RadarProcess(object):
 
     def __init__(self, sampleCount, frequencyCount, channelCount,
                 startFrequency, stepFrequency, intermediateFreq,
-                transmitPower, loPower,  maxNumSweeps=100, line_number=1, params=None, **kwargs ):
+                transmitPower, loPower,  maxNumSweeps=100, line_number=1, params=None, img_path=None, **kwargs ):
         self.num_samples = np.int64(sampleCount)
         self.number_of_frequencies = np.int64(frequencyCount)
         self.number_of_channels = np.int64(channelCount)
@@ -52,6 +53,8 @@ class RadarProcess(object):
         self.line_number=line_number
 
         self.params = params
+
+        self.img_path = img_path
 
 
         Fs = 122.88e6
@@ -191,7 +194,13 @@ class RadarProcess(object):
         plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
-        plt.savefig(f'img/raw_real-line-{self.line_number}.png')
+
+        filename = f'raw_real-line-{self.line_number}.png'
+
+        plt.savefig(f'img/{filename}')
+        if self.img_path:
+            logger/info(f"saving png to {self.img_path}")
+            plt.savefig(f'{self.img_path}/{filename}')
 
         #bg subtraction
 
@@ -208,9 +217,9 @@ class RadarProcess(object):
 
 
         print("radar non-bg  shape {} type: {}".format(rdr_real_n.shape, rdr_real_n.dtype))
-        filename = f"img/{self.line_number}-bg.hdf5"
+        filename = f"{self.line_number}-bg.hdf5"
 
-        bscan_file= h5py.File(filename, "w")
+        bscan_file= h5py.File(f'img/{filename}', "w")
         bscan_raw = bscan_file.create_dataset('raw_proc_data',(num_sweeps,num_m,), dtype='f' )
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
@@ -224,14 +233,17 @@ class RadarProcess(object):
         bscan_bg.write_direct(rdr_bg_removed)
 
         bscan_file.close()
-
-
+        if self.img_path:
+            shutil.copyfile(filename, f'{self.img_path}/{filename}')
+            logger.info("copying {} {}")
 
         plt.figure(figsize=(16,8))
         plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
         plt.savefig(f'img/raw_real_bg_removed-line-{self.line_number}.png')
+        if self.img_path:
+            plt.savefig(f'{self.img_path}/raw_real_bg_removed-line-{self.line_number}.png')
 
 def main():
     parser = argparse.ArgumentParser(description='Run a sweep or process and view saved sweep data.')

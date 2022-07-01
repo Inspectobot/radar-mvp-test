@@ -83,7 +83,8 @@ class RadarService(object):
                 os.makedirs(p)
             except:
                 pass
-            setattr(self, dir, p)
+            abs_path=os.path.abspath(p)
+            setattr(self, dir, abs_path)
 
     async def async_init(self, restart_radar=False):
         self.rover_address = socket.gethostbyname(self.rover_address)
@@ -213,7 +214,7 @@ class RadarService(object):
         self.line_index = line_number
 
         radar_proc_old = self.radar_process
-        self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, params=self.params, **self.params)
+        self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, params=self.params, img_path = self.img, **self.params)
         logger.info(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
         if radar_proc_old is not None:
             # do this to avoid race conditions without using locks (need to do before any awaits)
@@ -327,6 +328,7 @@ class RadarService(object):
     def to_dict(self):
         return {"running": self.trajectoryRunning,
         "scanFile": self.scanFile, "sweepCount": self.sweepCount,"output_dir":os.path.abspath(self.raw),
+        "start_time": self.start_time,
          "data": self.data}
 
 
