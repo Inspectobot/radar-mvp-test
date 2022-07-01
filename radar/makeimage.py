@@ -215,13 +215,13 @@ class RadarProcess(object):
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
 
-        bscan_raw.write_direct(rr_real_n)
+        bscan_raw.write_direct(rdr_real_n)
 
         bscan_bg = bscan_file.create_dataset('bg_subtract_data',(num_sweeps,num_m,), dtype='f' )
         for key in self.params:
           bscan_bg.attrs[key] = self.params[key]
 
-        bscan_bg.write_direct(rdr_real_n)
+        bscan_bg.write_direct(rdr_bg_removed)
 
         bscan_file.close()
 
