@@ -204,7 +204,16 @@ def main():
         logger.exception("failed to get params from redis, using first file")
         params = {"timestamp":0,"startFrequency":1500,"stepFrequency":20,"frequencyCount":151,"intermediateFreq":32,"transmitPower":-10,"loPower":15,"sampleCount":2048,"channelCount":2,"stepTriggerTimeInMicro":50,"synthWarmupTimeInMicro":5000000,"settlingTimeInMicro":500,"bufferSampleDelay":0}
 
-    file_list = sorted(glob.glob(args.data_file_path))
+    def get_sweep(f):
+        try:
+            filename = f.split('/')[-1].replace('.hdf5', '')
+            line, sweep = filename.split('-')
+            return int(sweep)
+        except:
+            print(f"failed to get sortkey {f}")
+            return f
+
+    file_list = sorted(glob.glob(args.data_file_path), key=get_sweep )
 
     radar = RadarProcess(**params, line_number=1)
 
