@@ -75,6 +75,16 @@ class RadarService(object):
 
         self.line_index = 0
 
+    def _setup_dirs(self):
+        self.start_time = datetime.datetime.now().isoformat()
+        for dir in ['out','img', 'raw']:
+            p = 'output/' + self.start_time + '/' + dir
+            try:
+                os.makedirs(p)
+            except:
+                pass
+            setattr(self, dir, p)
+
     async def async_init(self, restart_radar=False):
         self.rover_address = socket.gethostbyname(self.rover_address)
 
@@ -115,13 +125,7 @@ class RadarService(object):
 
         self.start_time = datetime.datetime.now().isoformat()
 
-        for dir in ['out','img', 'raw']:
-            p = 'output/' + self.start_time + '/' + dir
-            try:
-                os.makedirs(p)
-            except:
-                pass
-            setattr(self, dir, p)
+        self._setup_dirs()
 
         #hacky thing because it doesn't respond on first profile
         self.radar_writer.write(b"send")
@@ -222,7 +226,7 @@ class RadarService(object):
         self.proccess_futures = []
 
 
-    async def process_scan(self):
+    async def process_scan(self, plots=True):
 
 
         # Is this a race condition?  Maybe we need to asyncio lock this operation ?
@@ -231,7 +235,8 @@ class RadarService(object):
         loop = asyncio.get_event_loop()
         def _run():
             self.radar_process.save_image()
-            self.radar_process.save_plots()
+            if plots:
+                self.radar_process.save_plots()
         #todo can't run matplotlib in thread
         #return await loop.run_in_executor(self.executor, _run)
         return _run()
@@ -241,6 +246,11 @@ class RadarService(object):
 
         async with self.scan_lock:
             await self.process_scan()
+            # a proc request with this flag set mean the scan is done, we need to flush the scan and change the output dir
+            patternIndex = request.rel_url.query.get('patternIndex')
+            if patternIndex is not None:
+                self._setup_dirs()
+                await self.start_line_scan(0)
             return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
