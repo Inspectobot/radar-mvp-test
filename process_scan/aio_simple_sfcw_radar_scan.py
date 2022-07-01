@@ -130,8 +130,9 @@ class RadarService(object):
         self._setup_dirs()
 
         #hacky thing because it doesn't respond on first profile
-        self.radar_writer.write(b"send")
-        await self.radar_writer.drain()
+        async with self.scan_lock:
+            self.radar_writer.write(b"send")
+            await self.radar_writer.drain()
 
 
 
@@ -143,10 +144,11 @@ class RadarService(object):
                 if i > 3:
                     logger.error("too many attempts to retry radar")
                     raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
-                self.radar_writer.write(b"send")
-                await self.radar_writer.drain()
-                data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
-                break
+                async with self.scan_lock:
+                    self.radar_writer.write(b"send")
+                    await self.radar_writer.drain()
+                    data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
+                    break
 
             except asyncio.TimeoutError:
                 logger.exception(f"took more than {timeout} seconds to get data")
@@ -246,12 +248,11 @@ class RadarService(object):
     async def rest_process_scan(self, request):
         logger.info(dict(request.rel_url.query))
 
-        async with self.scan_lock:
-            patternIndex = request.rel_url.query.get('patternIndex')
-            run_plots = patternIndex is not None
-            await self.process_scan(plots=run_plots)
+        patternIndex = request.rel_url.query.get('patternIndex')
+        run_plots = patternIndex is not None
+        await self.process_scan(plots=run_plots)
 
-            return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
+        return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
     # async def get_data(self):
