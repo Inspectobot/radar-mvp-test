@@ -102,7 +102,7 @@ class RadarProcess(object):
         if radar_hdf5_file:
             data_set = radar_hdf5_file
         else:
-            data_set = h5.File(radar_file ,'r')
+            data_set = h5.File(radar_file ,'w')
         data_i = data_set['sweep_data_raw']
         print(f"sweep={sweep} file={radar_file}")
         for i in range(int(self.number_of_frequencies)):
@@ -186,6 +186,9 @@ class RadarProcess(object):
         for sweep in range(num_sweeps):
                 background = np.mean(rdr_real_n,axis=0) # should we exclude empty elements?
                 rdr_bg_removed[sweep] = rdr_real_n[sweep] - background;
+
+
+        import pdb; pdb.set_trace()
 
         plt.figure(figsize=(16,8))
         plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])
