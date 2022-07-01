@@ -61,6 +61,7 @@ class RadarService(object):
     tcp_server_coro = None
 
     radar_process = None
+    scan_lock = asyncio.Lock()
 
 
 
@@ -128,47 +129,47 @@ class RadarService(object):
 
 
 
-
     async def get_data_single(self, point_id=None, line_id=1, timeout=5, write_file=True):
-        profile = self.RadarProfile()
-        while True:
-            i = 0
-            try:
-                if i > 3:
-                    logger.error("too many attempts to retry radar")
-                    raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
-                self.radar_writer.write(b"send")
-                await self.radar_writer.drain()
-                data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
-                break
+        async with self.scan_lock:
+            profile = self.RadarProfile()
+            while True:
+                i = 0
+                try:
+                    if i > 3:
+                        logger.error("too many attempts to retry radar")
+                        raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
+                    self.radar_writer.write(b"send")
+                    await self.radar_writer.drain()
+                    data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
+                    break
 
-            except asyncio.TimeoutError:
-                logger.exception(f"took more than {timeout} seconds to get data")
+                except asyncio.TimeoutError:
+                    logger.exception(f"took more than {timeout} seconds to get data")
 
-            except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
-                i+=1
-                logger.exception("failed to get radar data, broken socket, resetting")
-                await asyncio.sleep(0.1)
-                logger.exception("Failed to write to radar socket, trying to reconnect")
-                await self.refresh_params()
+                except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
+                    i+=1
+                    logger.exception("failed to get radar data, broken socket, resetting")
+                    await asyncio.sleep(0.1)
+                    logger.exception("Failed to write to radar socket, trying to reconnect")
+                    await self.refresh_params()
 
 
-        self.sweepCount+=1
-        c.memmove(c.addressof(profile), data, c.sizeof(profile))
-        print("sweep complete", profile.getSamplesAtIndex())
-        pose = msgpack.unpackb(await self.redis.get('rover_pose'))
-        if point_id or point_id==0:
-            pass
-        else:
-            point_id = self.sweepCount
-        filename = f"{line_id}-{point_id}"
-        if write_file:
-            await self.write_profile(profile, pose, filename, sweep_num=point_id)
+            self.sweepCount+=1
+            c.memmove(c.addressof(profile), data, c.sizeof(profile))
+            print("sweep complete", profile.getSamplesAtIndex())
+            pose = msgpack.unpackb(await self.redis.get('rover_pose'))
+            if point_id or point_id==0:
+                pass
+            else:
+                point_id = self.sweepCount
+            filename = f"{line_id}-{point_id}"
+            if write_file:
+                await self.write_profile(profile, pose, filename, sweep_num=point_id)
 
-        # todo what kind of indexing do we want to do  ?
-        self.data[line_id].append(dict(name=filename, **pose))
-        self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
-        return profile
+            # todo what kind of indexing do we want to do  ?
+            self.data[line_id].append(dict(name=filename, **pose))
+            self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
+            return profile
 
     async def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True, sync=False):
         filename = self.raw + f"/{file_suffix}.hdf5"
