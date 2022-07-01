@@ -245,9 +245,9 @@ class RadarService(object):
         logger.info(dict(request.rel_url.query))
 
         async with self.scan_lock:
-            await self.process_scan()
-            # a proc request with this flag set mean the scan is done, we need to flush the scan and change the output dir
             patternIndex = request.rel_url.query.get('patternIndex')
+            await self.process_scan(plots=patternIndex)
+            # a proc request with this flag set mean the scan is done, we need to flush the scan and change the output dir
             if patternIndex is not None:
                 self._setup_dirs()
                 await self.start_line_scan(0)
