@@ -2,6 +2,7 @@ import time
 import sys
 import argparse
 import ctypes as c
+import json
 import sys
 sys.path.append("..")
 import os
@@ -249,10 +250,7 @@ class RadarService(object):
             patternIndex = request.rel_url.query.get('patternIndex')
             run_plots = patternIndex is not None
             await self.process_scan(plots=run_plots)
-            # a proc request with this flag set mean the scan is done, we need to flush the scan and change the output dir
-            if patternIndex is not None:
-                self._setup_dirs()
-                await self.start_line_scan(0)
+
             return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
@@ -305,7 +303,7 @@ class RadarService(object):
         return aiohttp.web.json_response(self.to_dict())
 
 
-    async def reset_process(self):
+    async def reset_process(self, request):
 
         """ Params:   reset_radar: Bollean (if sent as a parameter, will recconect to radar default False)
                       reset_data: Boolean """
@@ -336,25 +334,37 @@ class RadarService(object):
         data = self.to_dict()
         return aiohttp.web.json_response(data)
 
-    async def tcp_rover_server(self, reader, writer):
-        unpacker = msgpack.Unpacker(use_list=False, raw=False)
+    async def rest_start_scan_post(self, request):
+        self._setup_dirs()
+        await self.start_line_scan(0)
 
-        while True:
-            data = await reader.read(1024)
-            if not data:
-                break
-            unpacker.feed(data)
-            for unpacked in unpacker:
-                print(unpacked)
-                if unpacked.get('msg_type') == "scan":
-                  try:
-                    params = {'point_id': unpacked.get('point_id'), 'line_id': unpacked.get('line_id') }
-                    await self.get_data_single(timeout=5, write_file=True, **params)
-                    writer.write(msgpack.packb(dict(success=True, msg_type="scan_done", **params)))
-                  except Exception as e:
-                    logger.exception("failed to get point")
-                    writer.write(msgpack.packb(dict(success=True, msg_type="scan_failed", **params)))
-                  await writer.drain()
+        data = await request.json()
+        logger.info(data)
+
+        with open(f'{self.img}/../data.json', 'w') as f:
+            f.write(json.dumps(data))
+        return aiohttp.web.json_response(self.to_dict())
+
+    # async def tcp_rover_server(self, reader, writer):
+    #     unpacker = msgpack.Unpacker(use_list=False, raw=False)
+    #
+    #     while True:
+    #         data = await reader.read(1024)
+    #         if not data:
+    #             break
+    #         unpacker.feed(data)
+    #         for unpacked in unpacker:
+    #             print(unpacked)
+    #             if unpacked.get('msg_type') == "scan":
+    #               try:
+    #                 params = {'point_id': unpacked.get('point_id'), 'line_id': unpacked.get('line_id') }
+    #                 await self.get_data_single(timeout=5, write_file=True, **params)
+    #                 writer.write(msgpack.packb(dict(success=True, msg_type="scan_done", **params)))
+    #               except Exception as e:
+    #                 logger.exception("failed to get point")
+    #                 writer.write(msgpack.packb(dict(success=True, msg_type="scan_failed", **params)))
+    #               await writer.drain()
+
 
 
     async def http_server(self):
@@ -374,7 +384,8 @@ class RadarService(object):
             #aiohttp.web.get('/start', self.rest_start),
             #aiohttp.web.get('/cancel', self.rest_cancel),
             aiohttp.web.get('/scan', self.rest_trigger_scan),
-            aiohttp.web.get('/proc', self.rest_process_scan)
+            aiohttp.web.get('/proc', self.rest_process_scan),
+            aiohttp.web.post('/start_scan', self.rest_start_scan_post)
             ])
 
         self.http_runner = aiohttp.web.AppRunner(self.http_app)
