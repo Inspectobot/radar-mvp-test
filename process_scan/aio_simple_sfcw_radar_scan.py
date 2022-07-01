@@ -163,7 +163,7 @@ class RadarService(object):
             point_id = self.sweepCount
         filename = f"{line_id}-{point_id}"
         if write_file:
-            await self.write_profile(profile, pose, filename)
+            await self.write_profile(profile, pose, filename, sweep_num=point_id)
 
         # todo what kind of indexing do we want to do  ?
         self.data[line_id].append(dict(name=filename, **pose))

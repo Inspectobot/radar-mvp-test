@@ -169,7 +169,7 @@ class RadarProcess(object):
 
         #without bg subtraction
         plt.figure(figsize=(16,8))
-        plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
+        plt.imshow(rdr_real_n.transpose(),interpolation ='spline16',cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
         plt.savefig(f'img/raw_real-line-{self.line_number}.png')
@@ -185,7 +185,7 @@ class RadarProcess(object):
                 rdr_bg_removed[sweep] = rdr_real_n[sweep] - background;
 
         plt.figure(figsize=(16,8))
-        plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,num_sweeps,self.r_max-2,-2])
+        plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])
         plt.ylabel("Depth in meters")
         plt.xlabel("Travel distance in meters")
         plt.savefig(f'img/raw_real_bg_removed-line-{self.line_number}.png')
