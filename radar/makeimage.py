@@ -211,7 +211,7 @@ class RadarProcess(object):
         filename = f"img/{self.line_number}-bg.hdf5"
 
         bscan_file= h5py.File(filename, "w")
-        bscan_raw = bscan_file.create_dataset('raw_data',(num_sweeps,num_m,), dtype='f' )
+        bscan_raw = bscan_file.create_dataset('raw_proc_data',(num_sweeps,self.M,), dtype='f' )
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
 
