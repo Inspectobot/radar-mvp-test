@@ -124,7 +124,7 @@ class RadarProcess(object):
         proc_data = self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
 
         print("position data", data_i.attrs['pose.pos'] )
-        print("rotation data", data_i.attrs['pose.pos'] )
+        print("rotation data", data_i.attrs['pose.rot'] )
         print("position data shape", data_i.attrs['pose.pos'].shape)
 
         self.position_data[sweep] = data_i.attrs['pose.pos']
