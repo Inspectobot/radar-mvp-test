@@ -214,6 +214,7 @@ class RadarService(object):
             logger.info(f"existing radar service line {radar_proc_old.line_number} exists, saving")
             await asyncio.gather(*self.futures)
             if radar_proc_old.actual_num_sweeps > 0:
+                logger.info("done waiting, saving image")
                 radar_proc_old.save_image()
         #todo might still be a race condition here?
         self.proccess_futures = []

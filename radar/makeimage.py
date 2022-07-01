@@ -203,6 +203,7 @@ def main():
         import msgpack
         r = redis.Redis(host='inspectobot-rover.local', socket_timeout=0.01)
         params = msgpack.unpackb(r.get('radar_parameters'))
+        print(params)
     except Exception as e:
         logger.exception("failed to get params from redis, using first file")
         params = {"timestamp":0,"startFrequency":1500,"stepFrequency":20,"frequencyCount":151,"intermediateFreq":32,"transmitPower":-10,"loPower":15,"sampleCount":2048,"channelCount":2,"stepTriggerTimeInMicro":50,"synthWarmupTimeInMicro":5000000,"settlingTimeInMicro":500,"bufferSampleDelay":0}
