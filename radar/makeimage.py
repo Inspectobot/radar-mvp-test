@@ -218,8 +218,8 @@ class RadarProcess(object):
 
         print("radar non-bg  shape {} type: {}".format(rdr_real_n.shape, rdr_real_n.dtype))
         filename = f"{self.line_number}-bg.hdf5"
-
-        bscan_file= h5py.File(f'img/{filename}', "w")
+        bscan_filepath =f'img/{filename}'
+        bscan_file= h5py.File(bscan_filepath, "w")
         bscan_raw = bscan_file.create_dataset('raw_proc_data',(num_sweeps,num_m,), dtype='f' )
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
@@ -234,7 +234,7 @@ class RadarProcess(object):
 
         bscan_file.close()
         if self.img_path:
-            shutil.copyfile(filename, f'{self.img_path}/{filename}')
+            shutil.copyfile(bscan_filepath, f'{self.img_path}/{filename}')
             logger.info("copying {} {}")
 
         plt.figure(figsize=(16,8))
