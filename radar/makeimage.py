@@ -94,7 +94,7 @@ class RadarProcess(object):
         self.raw_data = np.zeros((num_sweeps,self.number_of_frequencies), dtype=complex)
         self.proc_data = np.zeros((num_sweeps,self.M), dtype=complex)
         self.position_data = np.zeros((num_sweeps, 3), dtype='f')
-
+        self.rotation_data = np.zeros((num_sweeps, 4), dtype='f')
 
 
     def process_sample(self, radar_file, sweep_num=None, radar_hdf5_file=None):
@@ -123,18 +123,19 @@ class RadarProcess(object):
         #Range compression
         proc_data = self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
 
-        print("position data", data_i.attrs['pose.pos'] )
-        print("rotation data", data_i.attrs['pose.rot'] )
-        print("position data shape", data_i.attrs['pose.pos'].shape)
+        # print("position data", data_i.attrs['pose.pos'] )
+        # print("rotation data", data_i.attrs['pose.rot'] )
+        # print("position data shape", data_i.attrs['pose.pos'].shape)
 
         self.position_data[sweep] = data_i.attrs['pose.pos']
-        print("proc data single shape {}".format(proc_data.shape))
-
-        print('shape!!')
-        print(proc_data.shape)
-
-        print('dtype')
-        print(proc_data.dtype)
+        self.rotation_data[sweep] = data_i.attrs['pose.rot']
+        # print("proc data single shape {}".format(proc_data.shape))
+        #
+        # print('shape!!')
+        # print(proc_data.shape)
+        #
+        # print('dtype')
+        # print(proc_data.dtype)
 
         proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.M, ), dtype=np.complex128)
         proc_data_hdf5.write_direct(self.proc_data[sweep])
@@ -239,7 +240,10 @@ class RadarProcess(object):
         bscan_bg.write_direct(rdr_bg_removed)
 
         position_dataset = bscan_file.create_dataset('position', (num_sweeps, 3), dtype='f')
-        position_dataset.write_direct(self.position_data)
+        position_dataset.write_direct(self.position_data[:num_sweeps])
+
+        rotation_dataset = bscan_file.create_dataset('rotation', (num_sweeps, 4), dtype='f')
+        rotation_dataset.write_direct(self.rotation_data[:num_sweeps])
 
         bscan_file.close()
         if self.img_path:
