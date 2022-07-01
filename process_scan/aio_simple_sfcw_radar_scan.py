@@ -94,7 +94,7 @@ class RadarService(object):
         self.pubsub = self.redis.pubsub()
         self.session = aiohttp.ClientSession()
         await self.refresh_params(restart_radar=restart_radar)
-        self.tcp_server_coro = asyncio.start_server(self.tcp_rover_server, '0.0.0.0', 8888)
+        #self.tcp_server_coro = asyncio.start_server(self.tcp_rover_server, '0.0.0.0', 8888)
 
         await self.start_line_scan(self.line_index) # setup default line scan
 
