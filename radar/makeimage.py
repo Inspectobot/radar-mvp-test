@@ -177,11 +177,11 @@ class RadarProcess(object):
         filename = f"img/{self.line_num}-bg.hdf5"
 
         bscan_file= h5py.File(filename, "w")
-        bscan_raw = bscan_file.create_dataset('raw_data',(**self.params), dtype='f' )
+        bscan_raw = bscan_file.create_dataset('raw_data',(*self.params), dtype='f' )
 
         bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
 
-        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(**self.params), dtype='f' )
+        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(*self.params), dtype='f' )
         bscan_bg.write_direct(rdr_real_n)
 
         bscan_file.close()

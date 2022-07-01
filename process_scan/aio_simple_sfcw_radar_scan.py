@@ -167,12 +167,12 @@ class RadarService(object):
             loop = asyncio.get_event_loop()
             logger.info(f"Queuing {filename} for processing / writing")
 
-            _run = lambda: self.write_profile(profile, pose, filename, sweep_num=point_id)
+            _run = lambda: self.write_profile(profile, pose, filename, line_id, sweep_num=point_id)
             self.futures.append(loop.run_in_executor(self.executor, _run))
 
         return profile
 
-    def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True):
+    def write_profile(self, profile, pose, file_suffix, line_id, sweep_num=None, proc=True, ):
         filename = self.raw + f"/{file_suffix}.hdf5"
 
         sweepFile = h5py.File(filename, "w")
@@ -190,8 +190,8 @@ class RadarService(object):
         sweepFile.close()
 
         # todo what kind of indexing do we want to do  ? do we need this ?
-        self.data[line_id].append(dict(name=filename, **pose))
-        self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
+        self.data[line_id].append(dict(name=file_suffix, **pose))
+        self.cached_data[file_suffix].append(dict(profile=profile, pose=pose, file_suffix=file_suffix))
 
         if proc:
             self.radar_process.process_sample(filename, sweep_num)
