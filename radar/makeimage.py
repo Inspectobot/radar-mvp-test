@@ -35,7 +35,7 @@ class RadarProcess(object):
 
     def __init__(self, sampleCount, frequencyCount, channelCount,
                 startFrequency, stepFrequency, intermediateFreq,
-                transmitPower, loPower,  maxNumSweeps=100, line_number=1, **kwargs ):
+                transmitPower, loPower,  maxNumSweeps=100, line_number=1, params=None, **kwargs ):
         self.num_samples = np.int64(sampleCount)
         self.number_of_frequencies = np.int64(frequencyCount)
         self.number_of_channels = np.int64(channelCount)
@@ -51,7 +51,7 @@ class RadarProcess(object):
 
         self.line_number=line_number
 
-
+        self.params = params
 
 
         Fs = 122.88e6
@@ -83,6 +83,7 @@ class RadarProcess(object):
         self.window = np.kaiser(self.number_of_frequencies, 6)
 
         self.allocate_dataset(maxNumSweeps)
+
 
 
     def allocate_dataset(self, num_sweeps):
@@ -118,7 +119,7 @@ class RadarProcess(object):
         #Range compression
         self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
 
-        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (*self.params), dtype='f')
+        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f')
         proc_data_hdf5.write_direct(self.proc_data[sweep,:])
 
         self.actual_num_sweeps+=1
@@ -174,17 +175,6 @@ class RadarProcess(object):
         rdr_real = np.real(self.proc_data[:num_sweeps, :200])
         rdr_real_n = rdr_real/np.max(np.max(np.abs(self.proc_data[:num_sweeps]))) # does this get effected by empty elements???
 
-        filename = f"img/{self.line_num}-bg.hdf5"
-
-        bscan_file= h5py.File(filename, "w")
-        bscan_raw = bscan_file.create_dataset('raw_data',(*self.params), dtype='f' )
-
-        bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
-
-        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(*self.params), dtype='f' )
-        bscan_bg.write_direct(rdr_real_n)
-
-        bscan_file.close()
 
 
         #without bg subtraction
@@ -205,7 +195,25 @@ class RadarProcess(object):
                 rdr_bg_removed[sweep] = rdr_real_n[sweep] - background;
 
 
-        import pdb; pdb.set_trace()
+        print("radar bg shape {}".format(rdr_bg_removed.shape))
+
+
+        print("radar non-bg  shape {}".format(rdr_real_n.shape))
+        filename = f"img/{self.line_num}-bg.hdf5"
+
+        bscan_file= h5py.File(filename, "w")
+        bscan_raw = bscan_file.create_dataset('raw_data',(self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f' )
+        for key in self.params:
+          bscan_raw.attrs[key] = self.params[key]
+
+        bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
+
+        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f' )
+        bscan_bg.write_direct(rdr_real_n)
+
+        bscan_file.close()
+
+
 
         plt.figure(figsize=(16,8))
         plt.imshow(rdr_bg_removed.transpose(),cmap='Greys',extent=[0,int(num_sweeps/2),self.r_max-2,-2])

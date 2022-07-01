@@ -209,7 +209,7 @@ class RadarService(object):
         self.line_index = line_number
 
         radar_proc_old = self.radar_process
-        self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, **self.params)
+        self.radar_process = RadarProcess(line_number=line_number, maxNumSweeps=max_sweeps, params=self.params, **self.params)
         logger.info(f"Created radar service line: {line_number} maxsweeps: {max_sweeps} {self.params}")
         if radar_proc_old is not None:
             # do this to avoid race conditions without using locks (need to do before any awaits)
