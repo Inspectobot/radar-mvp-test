@@ -130,74 +130,75 @@ class RadarService(object):
 
 
     async def get_data_single(self, point_id=None, line_id=1, timeout=5, write_file=True):
-        async with self.scan_lock:
-            profile = self.RadarProfile()
-            while True:
-                i = 0
-                try:
-                    if i > 3:
-                        logger.error("too many attempts to retry radar")
-                        raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
-                    self.radar_writer.write(b"send")
-                    await self.radar_writer.drain()
-                    data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
-                    break
+        profile = self.RadarProfile()
+        while True:
+            i = 0
+            try:
+                if i > 3:
+                    logger.error("too many attempts to retry radar")
+                    raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
+                self.radar_writer.write(b"send")
+                await self.radar_writer.drain()
+                data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
+                break
 
-                except asyncio.TimeoutError:
-                    logger.exception(f"took more than {timeout} seconds to get data")
+            except asyncio.TimeoutError:
+                logger.exception(f"took more than {timeout} seconds to get data")
 
-                except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
-                    i+=1
-                    logger.exception("failed to get radar data, broken socket, resetting")
-                    await asyncio.sleep(0.1)
-                    logger.exception("Failed to write to radar socket, trying to reconnect")
-                    await self.refresh_params()
+            except (EOFError, asyncio.streams.IncompleteReadError, RuntimeError) as e:
+                i+=1
+                logger.exception("failed to get radar data, broken socket, resetting")
+                await asyncio.sleep(0.1)
+                logger.exception("Failed to write to radar socket, trying to reconnect")
+                await self.refresh_params()
 
 
-            self.sweepCount+=1
-            c.memmove(c.addressof(profile), data, c.sizeof(profile))
-            print("sweep complete", profile.getSamplesAtIndex())
-            pose = msgpack.unpackb(await self.redis.get('rover_pose'))
-            if point_id or point_id==0:
-                pass
-            else:
-                point_id = self.sweepCount
-            filename = f"{line_id}-{point_id}"
-            if write_file:
-                await self.write_profile(profile, pose, filename, sweep_num=point_id)
+        self.sweepCount+=1
+        c.memmove(c.addressof(profile), data, c.sizeof(profile))
+        print("sweep complete", profile.getSamplesAtIndex())
+        pose = msgpack.unpackb(await self.redis.get('rover_pose'))
+        if point_id or point_id==0:
+            pass
+        else:
+            point_id = self.sweepCount
+        filename = f"{line_id}-{point_id}"
 
-            # todo what kind of indexing do we want to do  ?
-            self.data[line_id].append(dict(name=filename, **pose))
-            self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
-            return profile
+        if write_file:
+            loop = asyncio.get_event_loop()
+            logger.info(f"Queuing {filename} for processing / writing")
 
-    async def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True, sync=False):
+            _run = lambda: self.write_profile(profile, pose, filename, sweep_num=point_id)
+            self.futures.append(loop.run_in_executor(self.executor, _run))
+
+        return profile
+
+    def write_profile(self, profile, pose, file_suffix, sweep_num=None, proc=True):
         filename = self.raw + f"/{file_suffix}.hdf5"
 
-        def _run():
-            sweepFile = h5py.File(filename, "w")
-            sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
-                                                    (self.params['channelCount'],
-                                                    self.params['frequencyCount'],
-                                                    self.params['sampleCount']), dtype='f')
+        sweepFile = h5py.File(filename, "w")
+        sweepDataSet = sweepFile.create_dataset('sweep_data_raw',
+                                                (self.params['channelCount'],
+                                                self.params['frequencyCount'],
+                                                self.params['sampleCount']), dtype='f')
 
-            for key in self.params:
-              sweepDataSet.attrs[key] = self.params[key]
+        for key in self.params:
+          sweepDataSet.attrs[key] = self.params[key]
 
-            sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
-            sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
-            sweepDataSet.write_direct(profile.asArray())
-            sweepFile.close()
-            if proc:
-                self.radar_process.process_sample(filename, sweep_num)
+        sweepDataSet.attrs['pose.pos'] = np.array(pose['pos'])
+        sweepDataSet.attrs['pose.rot'] = np.array(pose['rot'])
+        sweepDataSet.write_direct(profile.asArray())
+        sweepFile.close()
 
-            return filename
-        if sync:
-            _run()
-        else:
-            loop = asyncio.get_event_loop()
-            logger.info(f"Queuing {filename} for processing")
-            self.futures.append(loop.run_in_executor(self.executor, _run))
+        # todo what kind of indexing do we want to do  ? do we need this ?
+        self.data[line_id].append(dict(name=filename, **pose))
+        self.cached_data[filename].append(dict(profile=profile, pose=pose, filename=filename))
+
+        if proc:
+            self.radar_process.process_sample(filename, sweep_num)
+
+        return filename
+
+
 
 
 
@@ -238,8 +239,9 @@ class RadarService(object):
     async def rest_process_scan(self, request):
         logger.info(dict(request.rel_url.query))
 
-        await self.process_scan()
-        return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
+        async with self.scan_lock:
+            await self.process_scan()
+            return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
     # async def get_data(self):
