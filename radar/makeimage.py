@@ -122,7 +122,7 @@ class RadarProcess(object):
         print("proc data single shape {}".format(proc_data.shape))
 
 
-        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.M), dtype='f')
+        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.M,), dtype='f')
         proc_data_hdf5.write_direct(self.proc_data[sweep,:])
 
         self.actual_num_sweeps+=1
