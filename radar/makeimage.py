@@ -199,7 +199,7 @@ class RadarProcess(object):
 
         plt.savefig(f'img/{filename}')
         if self.img_path:
-            logger/info(f"saving png to {self.img_path}")
+            logger.info(f"saving png to {self.img_path}")
             plt.savefig(f'{self.img_path}/{filename}')
 
         #bg subtraction
