@@ -95,7 +95,10 @@ class RadarProcess(object):
     def process_sample(self, radar_file, sweep_num=None, radar_hdf5_file=None):
         """ Todo process from in-memory array instead of hdf5 """
         start = datetime.datetime.now()
-        sweep = sweep_num or self.actual_num_sweeps
+        if sweep_num==0:
+            sweep=0
+        else:
+            sweep = sweep_num or self.actual_num_sweeps
         if radar_hdf5_file:
             data_set = radar_hdf5_file
         else:
@@ -117,7 +120,7 @@ class RadarProcess(object):
         self.actual_num_sweeps+=1
         data_set.close()
         seconds = (datetime.datetime.now() - start).total_seconds()
-        logger.warn(f"done processing {radar_file} taken {seconds} seconds")
+        logger.warn(f"done processing: {radar_file} sweep_num: {sweep} taken {seconds} seconds")
 
 
 
