@@ -327,7 +327,7 @@ class RadarService(object):
     def to_dict(self):
         return {"running": self.trajectoryRunning,
         "scanFile": self.scanFile, "sweepCount": self.sweepCount,"output_dir":os.path.abspath(self.raw),
-        "start_time": self.start_time,
+        "start_time": self.start_time,'image_dir':self.img, 'current_img_path':f'/imgjson/{self.start_time}',
          "data": self.data}
 
 
