@@ -117,6 +117,10 @@ class RadarProcess(object):
                 self.raw_data[sweep,i]=np.mean(bb[100:self.num_samples//2])
         #Range compression
         self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
+
+        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc')
+        proc_data_hdf5.write_direct(self.proc_data[sweep,:])
+
         self.actual_num_sweeps+=1
         data_set.close()
         seconds = (datetime.datetime.now() - start).total_seconds()
@@ -169,6 +173,19 @@ class RadarProcess(object):
 
         rdr_real = np.real(self.proc_data[:num_sweeps, :200])
         rdr_real_n = rdr_real/np.max(np.max(np.abs(self.proc_data[:num_sweeps]))) # does this get effected by empty elements???
+
+        filename = f"img/{self.line_num}-bg.hdf5"
+
+        bscan_file= h5py.File(filename, "w")
+        bscan_raw = bscan_file.create_dataset('raw_data',(**self.params), dtype='f' )
+
+        bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
+
+        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(**self.params), dtype='f' )
+        bscan_bg.write_direct(rdr_real_n)
+
+        bscan_file.close()
+
 
         #without bg subtraction
         plt.figure(figsize=(16,8))
