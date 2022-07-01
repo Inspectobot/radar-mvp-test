@@ -117,7 +117,10 @@ class RadarProcess(object):
                 bb,_= self.bb_filter(bb_mixer)
                 self.raw_data[sweep,i]=np.mean(bb[100:self.num_samples//2])
         #Range compression
-        self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
+        proc_data = self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
+
+        print("proc data single shape {}".format(proc_data.shape))
+
 
         proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f')
         proc_data_hdf5.write_direct(self.proc_data[sweep,:])
