@@ -122,7 +122,7 @@ class RadarProcess(object):
         print("proc data single shape {}".format(proc_data.shape))
 
 
-        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f')
+        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (self.M), dtype='f')
         proc_data_hdf5.write_direct(self.proc_data[sweep,:])
 
         self.actual_num_sweeps+=1
@@ -205,13 +205,16 @@ class RadarProcess(object):
         filename = f"img/{self.line_num}-bg.hdf5"
 
         bscan_file= h5py.File(filename, "w")
-        bscan_raw = bscan_file.create_dataset('raw_data',(self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f' )
+        bscan_raw = bscan_file.create_dataset('raw_data',(self.M,), dtype='f' )
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
 
         bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
 
-        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(self.number_of_channels, self.number_of_frequencies, self.num_samples), dtype='f' )
+        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(self.M,), dtype='f' )
+        for key in self.params:
+          bscan_bg.attrs[key] = self.params[key]
+
         bscan_bg.write_direct(rdr_real_n)
 
         bscan_file.close()
