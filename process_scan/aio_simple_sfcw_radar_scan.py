@@ -228,7 +228,7 @@ class RadarService(object):
 
     async def process_scan(self, plots=True):
 
-
+        print(f"run plots {plots}")
         # Is this a race condition?  Maybe we need to asyncio lock this operation ?
         await asyncio.gather(*self.futures)
         self.futures = []
@@ -246,7 +246,8 @@ class RadarService(object):
 
         async with self.scan_lock:
             patternIndex = request.rel_url.query.get('patternIndex')
-            await self.process_scan(plots=patternIndex)
+            run_plots = patternIndex is not None
+            await self.process_scan(plots=run_plots)
             # a proc request with this flag set mean the scan is done, we need to flush the scan and change the output dir
             if patternIndex is not None:
                 self._setup_dirs()
