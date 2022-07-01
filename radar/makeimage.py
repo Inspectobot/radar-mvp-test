@@ -93,6 +93,7 @@ class RadarProcess(object):
         self.radar_data_plane = np.zeros(num_sweeps, self.number_of_frequencies)
         self.raw_data = np.zeros((num_sweeps,self.number_of_frequencies), dtype=complex)
         self.proc_data = np.zeros((num_sweeps,self.M), dtype=complex)
+        self.position_data = zp.zeros((num_sweeps, 3), dtype='f')
 
 
 
@@ -122,6 +123,11 @@ class RadarProcess(object):
         #Range compression
         proc_data = self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
 
+        print("position data", data_i.attrs['pose.pos'] )
+        print("rotation data", data_i.attrs['pose.pos'] )
+        print("position data shape", data_i.attrs['pose.pos'].shape)
+
+        self.position_data[sweep] = data_i.attrs['pose.pos']
         print("proc data single shape {}".format(proc_data.shape))
 
         print('shape!!')
@@ -231,6 +237,9 @@ class RadarProcess(object):
           bscan_bg.attrs[key] = self.params[key]
 
         bscan_bg.write_direct(rdr_bg_removed)
+
+        position_dataset = bscan_file.create_dataset('position', (num_sweeps, 3), dtype='f')
+        position_dataset.write_direct(self.position_data)
 
         bscan_file.close()
         if self.img_path:
