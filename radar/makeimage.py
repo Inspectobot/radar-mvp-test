@@ -118,7 +118,7 @@ class RadarProcess(object):
         #Range compression
         self.proc_data[sweep,:] = np.fft.ifft(self.raw_data[sweep,:]*self.window,self.M)/self.M
 
-        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc')
+        proc_data_hdf5 = data_set.create_dataset('sweep_data_proc', (*self.params), dtype='f')
         proc_data_hdf5.write_direct(self.proc_data[sweep,:])
 
         self.actual_num_sweeps+=1
