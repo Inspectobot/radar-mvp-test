@@ -123,7 +123,7 @@ class RadarProcess(object):
 
         print('shape!!')
         print(proc_data.shape)
-        
+
         print('dtype')
         print(proc_data.dtype)
 
@@ -207,7 +207,7 @@ class RadarProcess(object):
 
 
         print("radar non-bg  shape {}".format(rdr_real_n.shape))
-        filename = f"img/{self.line_num}-bg.hdf5"
+        filename = f"img/{self.line_number}-bg.hdf5"
 
         bscan_file= h5py.File(filename, "w")
         bscan_raw = bscan_file.create_dataset('raw_data',(self.M,), dtype='f' )
