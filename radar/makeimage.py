@@ -4,7 +4,7 @@ import inspect
 import argparse
 import glob
 import datetime
-
+import h5py
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parentdir = os.path.dirname(currentdir)
@@ -173,6 +173,7 @@ class RadarProcess(object):
             plt.close()
 
     def save_image(self):
+        num_m = 200
         logger.warn("Saving plots")
         try:
             os.makedirs('img')
@@ -180,7 +181,7 @@ class RadarProcess(object):
             pass
         num_sweeps = self.actual_num_sweeps
 
-        rdr_real = np.real(self.proc_data[:num_sweeps, :200])
+        rdr_real = np.real(self.proc_data[:num_sweeps, :num_m])
         rdr_real_n = rdr_real/np.max(np.max(np.abs(self.proc_data[:num_sweeps]))) # does this get effected by empty elements???
 
 
@@ -197,26 +198,26 @@ class RadarProcess(object):
         num_sweeps = self.actual_num_sweeps
         P = int(num_sweeps/2)
         print(num_sweeps)
-        rdr_bg_removed = np.zeros((num_sweeps,200))
+        rdr_bg_removed = np.zeros((num_sweeps,num_m))
         for sweep in range(num_sweeps):
                 background = np.mean(rdr_real_n,axis=0) # should we exclude empty elements?
                 rdr_bg_removed[sweep] = rdr_real_n[sweep] - background;
 
 
-        print("radar bg shape {}".format(rdr_bg_removed.shape))
+        print("radar bg shape {} type {}".format(rdr_bg_removed.shape, rdr_bg_removed.dtype))
 
 
-        print("radar non-bg  shape {}".format(rdr_real_n.shape))
+        print("radar non-bg  shape {} type: {}".format(rdr_real_n.shape, rdr_real_n.dtype))
         filename = f"img/{self.line_number}-bg.hdf5"
 
         bscan_file= h5py.File(filename, "w")
-        bscan_raw = bscan_file.create_dataset('raw_data',(self.M,), dtype='f' )
+        bscan_raw = bscan_file.create_dataset('raw_data',(num_sweeps,num_m,), dtype='f' )
         for key in self.params:
           bscan_raw.attrs[key] = self.params[key]
 
         bscan_raw.write_direct(self.proc_data[:num_sweeps, :])
 
-        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(self.M,), dtype='f' )
+        bscan_bg = bscan_file.create_dataset('bg_subtract_data',(num_sweeps,num_m,), dtype='f' )
         for key in self.params:
           bscan_bg.attrs[key] = self.params[key]
 
