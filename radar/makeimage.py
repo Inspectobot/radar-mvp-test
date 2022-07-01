@@ -93,7 +93,7 @@ class RadarProcess(object):
         self.radar_data_plane = np.zeros(num_sweeps, self.number_of_frequencies)
         self.raw_data = np.zeros((num_sweeps,self.number_of_frequencies), dtype=complex)
         self.proc_data = np.zeros((num_sweeps,self.M), dtype=complex)
-        self.position_data = zp.zeros((num_sweeps, 3), dtype='f')
+        self.position_data = np.zeros((num_sweeps, 3), dtype='f')
 
 
 
