@@ -340,8 +340,6 @@ class RadarService(object):
         await self.start_line_scan(0)
 
         data = await request.json()
-        logger.info(data)
-
         with open(f'{self.img}/../data.json', 'w') as f:
             f.write(json.dumps(data))
         return aiohttp.web.json_response(self.to_dict())
