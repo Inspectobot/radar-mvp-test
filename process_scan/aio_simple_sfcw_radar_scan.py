@@ -50,7 +50,7 @@ class RadarService(object):
     scanFile = None
 
     radar_address = 'radar'
-    rover_address ='localhost'
+    rover_address ='192.168.1.132'
 
     http_port = 9005
     http_address='0.0.0.0'
@@ -98,7 +98,7 @@ class RadarService(object):
 
         await self.start_line_scan(self.line_index) # setup default line scan
 
-    async def refresh_params(self, restart_radar = False, reset_radar_connection=True):
+    async def refresh_params(self, restart_radar = False, reset_radar_connection=False):
 
         params = self.params = msgpack.unpackb(await self.redis.get('radar_parameters'))
         self.RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
