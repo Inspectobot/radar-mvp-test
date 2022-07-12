@@ -4,7 +4,7 @@ import json
 
 DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), 'output')
 
-dryRun = True
+dryRun = False
 
 def getSyncJSONFilePath(name):
     return os.path.join(DATA_DIRECTORY, name, 'syncData.json')

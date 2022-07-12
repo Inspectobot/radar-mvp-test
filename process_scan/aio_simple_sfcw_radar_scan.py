@@ -57,7 +57,7 @@ class RadarService(object):
     scanFileName = None
     scanFile = None
 
-    radar_address = 'localhost'
+    radar_address = 'radar'
     rover_address ='localhost'
 
     http_port = 9005
@@ -261,7 +261,8 @@ class RadarService(object):
         await self.process_scan(plots=run_plots)
 
         ## INSERT 
-
+        
+        print("starting s3 upload...")
         #abspath will reach the process_scan directory,then we direct the path to the output folder and our new timestamped folder
         s3sync.pathSync(os.path.join(DATA_DIRECTORY, self.start_time), self.start_time)
         s3sync.fileWrite(self.start_time, s3sync.getResult()) #save the sync progress output to the json folder
