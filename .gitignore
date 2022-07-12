@@ -1,3 +1,5 @@
+node_modules
+process_scan/output/*
 .idea/
 # Byte-compiled / optimized / DLL files
 __pycache__/

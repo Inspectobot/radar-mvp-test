@@ -1,3 +1,8 @@
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=0
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=1
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=2
+# http://localhost:9005/proc?patternIndex=0
+
 import time
 import sys
 import argparse
@@ -6,10 +11,13 @@ import json
 import sys
 sys.path.append("..")
 import os
+
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+
+DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), 'output')
 
 import matplotlib
 matplotlib.use("Agg")
@@ -39,9 +47,9 @@ import uvloop
 
 from collections import defaultdict,OrderedDict
 
-
 from concurrent.futures import ThreadPoolExecutor
 
+import s3sync
 
 class RadarService(object):
     trajectoryRunning = False
@@ -49,8 +57,8 @@ class RadarService(object):
     scanFileName = None
     scanFile = None
 
-    radar_address = 'radar'
-    rover_address ='192.168.1.132'
+    radar_address = 'localhost'
+    rover_address ='localhost'
 
     http_port = 9005
     http_address='0.0.0.0'
@@ -98,7 +106,7 @@ class RadarService(object):
 
         await self.start_line_scan(self.line_index) # setup default line scan
 
-    async def refresh_params(self, restart_radar = False, reset_radar_connection=False):
+    async def refresh_params(self, restart_radar = False, reset_radar_connection=True):
 
         params = self.params = msgpack.unpackb(await self.redis.get('radar_parameters'))
         self.RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
@@ -115,7 +123,7 @@ class RadarService(object):
 
                 except Exception as e:
                     if "Connection" in str(e):
-                        logger.exception("connection error, restarting")
+                        logger.exception("con'testFolderNew'nection error, restarting")
                         try:
                             async with self.session.get(f"http://{self.radar_address}:8081/restart"):
                                 pass
@@ -252,6 +260,15 @@ class RadarService(object):
         run_plots = patternIndex is not None
         await self.process_scan(plots=run_plots)
 
+        ## INSERT 
+
+        #abspath will reach the process_scan directory,then we direct the path to the output folder and our new timestamped folder
+        s3sync.pathSync(os.path.join(DATA_DIRECTORY, self.start_time), self.start_time)
+        s3sync.fileWrite(self.start_time, s3sync.getResult()) #save the sync progress output to the json folder
+        
+        #s3sync.fileWriteDict(dict(success=True, **self.to_dict()))
+        #print(self)
+
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
@@ -342,6 +359,7 @@ class RadarService(object):
         data = await request.json()
         with open(f'{self.img}/../data.json', 'w') as f:
             f.write(json.dumps(data))
+            #sync data here
         return aiohttp.web.json_response(self.to_dict())
 
     # async def tcp_rover_server(self, reader, writer):
