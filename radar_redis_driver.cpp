@@ -416,60 +416,55 @@ static int setnonblocking(int sockfd) {
   return 0;
 }
 
-struct RadarProfile* captureProfile() {
-  struct RadarProfile* profile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
+bool sweepDirectionUp = true;
+void captureProfile(RadarProfile* profile) {
+  bzero(profile, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
 
-  bool sweepDirectionUp = true;
+  int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+  profile->timestamp = uint32_t(currentMicro - startupTimestamp);
 
-  while(keepRunning) {
-    int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-    profile->timestamp = uint32_t(currentMicro - startupTimestamp);
+  for(int i = 0; i < frequencyCount; i++) {
+    rp_AcqStart();
 
-    for(int i = 0; i < frequencyCount; i++) {
-      rp_AcqStart();
+    rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
+    rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
-      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-      rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
-
-      while(1){
-        rp_AcqGetTriggerState(&state);
-        if(state == RP_TRIG_STATE_TRIGGERED){
-          break;
-        }
+    while(1){
+      rp_AcqGetTriggerState(&state);
+      if(state == RP_TRIG_STATE_TRIGGERED){
+        break;
       }
-
-      rp_AcqStop();
-
-      uint32_t bufferTriggerPosition;
-      rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
-
-      int idx0, idx1;
-      if(sweepDirectionUp) {
-        idx0 = i * sampleCount;
-        idx1 = (sampleCount * frequencyCount) + idx0;
-      } else {
-        idx0 = ((frequencyCount - 1) - i) * sampleCount;
-        idx1 = (sampleCount * frequencyCount) + idx0;
-      }
-
-      rp_AcqGetDataV2(bufferTriggerPosition,
-        &sampleCount,
-        &profile->data[idx0],
-        &profile->data[idx1]);
-
-      rp_DpinSetState(stepPin, RP_HIGH);
-      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
-      rp_DpinSetState(stepPin, RP_LOW);
-
-      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
     }
 
-    int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+    rp_AcqStop();
 
-    printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
+    uint32_t bufferTriggerPosition;
+    rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
+
+    int idx0, idx1;
+    if(sweepDirectionUp) {
+      idx0 = i * sampleCount;
+      idx1 = (sampleCount * frequencyCount) + idx0;
+    } else {
+      idx0 = ((frequencyCount - 1) - i) * sampleCount;
+      idx1 = (sampleCount * frequencyCount) + idx0;
+    }
+
+    rp_AcqGetDataV2(bufferTriggerPosition,
+      &sampleCount,
+      &profile->data[idx0],
+      &profile->data[idx1]);
+
+    rp_DpinSetState(stepPin, RP_HIGH);
+    std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
+    rp_DpinSetState(stepPin, RP_LOW);
+
+    std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
   }
 
-  return profile;
+  int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+  printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
 }
 
 int main (int argc, char **argv) {
@@ -621,6 +616,11 @@ int main (int argc, char **argv) {
   queryFrequency(rfSource);
   queryPower(rfSource);
 
+  size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT);
+  RadarProfile* profileBuffer = (RadarProfile *)calloc(1, len);
+  char *profileData;
+  profileData = (char *) calloc(1, len);
+
   char buf[RECEIVE_BUFFER_SIZE];
   struct sockaddr_in srv_addr;
   struct sockaddr_in cli_addr;
@@ -664,16 +664,13 @@ int main (int argc, char **argv) {
           } else {
             printf("got trigger request: %s\n", buf);
 
-            size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT);
             printf("profile size in bytes %zu\n", len);
 
-            RadarProfile* profile = captureProfile(); 
+            captureProfile(profileBuffer);
 
-            char *data;
-            data = (char *) calloc(1, len);
-
-            memcpy(data, profile, len);
-            write(events[i].data.fd, data, strlen(data));
+            bzero(profileData, len);
+            memcpy(profileData, profileBuffer, len);
+            write(events[i].data.fd, profileData, len);
           }
         }
       } else {
