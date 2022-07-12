@@ -14,9 +14,14 @@
 #include <chrono>
 #include <thread>
 
+#include <fcntl.h>
+
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
+#include <errno.h>
+
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -34,16 +39,15 @@ extern "C" {
 
 #include <sw/redis++/redis++.h>
 
-#include "ringbuffer.hpp"
-
 #define NUMCPP_NO_USE_BOOST 1
 #include "NumCpp.hpp"
 
-#include <thread>
-
 #define TCP_PORT 1001
+#define MAX_CONNECTIONS 1
+#define MAX_EVENTS 32
+#define RECEIVE_BUFFER_SIZE 16
+
 #define CHANNEL_COUNT 2
-#define PROFILE_BUFFER_SIZE 8
 
 using namespace std::chrono;
 
@@ -59,14 +63,14 @@ class SynthSerialPort : public SerialPort {
 
       SerialPort::Write(dataString + ";\r");
       SerialPort::DrainWriteBuffer();
-            
+
       std::stringstream ss;
 
       while(responseLineCount > 0) {
         responseLineCount--;
 
         try {
-          
+
           std::string responseLine;
           SerialPort::ReadLine(responseLine, '\r', 1);
           if(DEBUG_SYNTH_SERIAL) std::cout << "Response: " << responseLine << endl;
@@ -99,7 +103,11 @@ int stepTriggerTimeInMicro = 5;
 int synthWarmupTimeInMicro = 10000000;
 int channelCount = 2;
 
+rp_dpin_t stepPin = RP_DIO5_N;
+
 static volatile int keepRunning = 1;
+
+static volatile int runSample = 0;
 
 struct ParametersMessage {
   uint32_t timestamp = 0;
@@ -173,7 +181,7 @@ Redis* redis;
 
 struct RadarProfile {
   uint32_t timestamp;
-  
+
   float data[];
 };
 
@@ -198,22 +206,22 @@ void enableExcitation(SynthSerialPort& rfSource, int transmitPower, int loPower)
   float loAtten = 15 - loPower;
 
   rfSource.SendCommand("Source 1");
- 
+
   std::stringstream transmitPowerSs;
   transmitPowerSs << std::fixed << std::setprecision(2) << transmitAtten;
 
-  rfSource.SendCommand("ATTenuator " + transmitPowerSs.str());  
-   
+  rfSource.SendCommand("ATTenuator " + transmitPowerSs.str());
+
   rfSource.SendCommand("oen 1");
   rfSource.SendCommand("pdn 1");
 
   rfSource.SendCommand("Source 2");
-  
+
   std::stringstream loPowerSs;
   loPowerSs << std::fixed << std::setprecision(2) << loAtten;
 
-  rfSource.SendCommand("ATTenuator " + loPowerSs.str());  
-  
+  rfSource.SendCommand("ATTenuator " + loPowerSs.str());
+
   rfSource.SendCommand("oen 1");
   rfSource.SendCommand("pdn 1");
 
@@ -244,7 +252,7 @@ void queryPower(SynthSerialPort& rfSource) {
   std::string channel1 = rfSource.SendCommand("ATTenuator?");
 
   std::cout << "Channel 1 Attenutation (power +15 dbM): " << channel1 << std::endl;
-  
+
   rfSource.SendCommand("Source 1");
 }
 
@@ -265,7 +273,7 @@ void intHandler(int dummy) {
 	if (keepRunning == 0) {
 		printf("shutting down!\n");
     //disableExcitation();
-    
+
     rp_Release();
 
     exit(-1);
@@ -282,7 +290,7 @@ void setupSweep(
   float stepTimeInMs) {
 
   std::cout << "Step time in ms: " << stepTimeInMs << std::endl;
-  
+
   rfSource.SendCommand("Source 1");
   rfSource.SendCommand("Mode SWEEP");
 
@@ -341,10 +349,10 @@ void setupSweepTable(
   int frequencyCount = sweepRange.size();
 
   for(int c = 0; c < CHANNEL_COUNT; c++) {
-    
+
     rfSource.SendCommand("Source " + std::to_string(c + 1));
     rfSource.SendCommand("Mode LIST");
-    
+
     std::stringstream rateInMsSs;
     rateInMsSs << std::fixed << std::setprecision(1);
     rfSource.SendCommand("RATE " + rateInMsSs.str());
@@ -356,7 +364,7 @@ void setupSweepTable(
 
     int listIndex = 0;
     for(int i = 0; i < (frequencyCount * 2); i++) {
-      
+
       listIndex++;
 
       int j = i;
@@ -364,108 +372,104 @@ void setupSweepTable(
       if(i > (frequencyCount - 1)) {
         j = (frequencyCount - 1) - (i - frequencyCount);
       }
-      
+
       std::stringstream sweepTableEntry;
 
       sweepTableEntry
         << "List"
-        << " " 
-        << std::to_string(listIndex) 
+        << " "
+        << std::to_string(listIndex)
         << " "
         << std::fixed << std::setprecision(6) << sweepRange[j] + (c == 1 ? intermediateFrequency : 0.0)
         << " "
         << std::fixed << std::setprecision(1) << (c == 0 ? transmitAtten : loAtten);
 
-      rfSource.SendCommand(sweepTableEntry.str());    
+      rfSource.SendCommand(sweepTableEntry.str());
     }
   }
 }
 
-jnk0le::Ringbuffer<RadarProfile*, 4> profileBuffer;
-struct RadarProfile* profileBuffers[PROFILE_BUFFER_SIZE];
-
-void tcpDataServerTask() {
-  cpu_set_t mask;
-
-  struct sched_param param;
-
-  memset(&param, 0, sizeof(param));
-  param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-  sched_setscheduler(0, SCHED_FIFO, &param);
+static void epoll_ctl_add(int epfd, int fd, uint32_t events) {
+  struct epoll_event ev;
   
-  CPU_ZERO(&mask);
-  CPU_SET(0, &mask);
-  sched_setaffinity(0, sizeof(cpu_set_t), &mask);
+  ev.events = events;
+  ev.data.fd = fd;
+  
+  if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+    perror("epoll_ctl()\n");
+    exit(1);
+  }
+}
 
-  int sock_server, sock_client;
-  int yes = 1;
+static void set_sockaddr(struct sockaddr_in *addr) {
+  bzero((char *)addr, sizeof(struct sockaddr_in));
+  addr->sin_family = AF_INET;
+  addr->sin_addr.s_addr = INADDR_ANY;
+  addr->sin_port = htons(TCP_PORT);
+}
 
-  struct sockaddr_in addr; 
-
-  printf("Started tcp server task\n");
-
-  if((sock_server = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printf("Error opening listening socket\n"); 
-    keepRunning = false;
+static int setnonblocking(int sockfd) {
+  if (fcntl(sockfd, F_SETFD, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK) == -1) {
+    return -1;
   }
 
-  setsockopt(sock_server, SOL_SOCKET, SO_REUSEADDR, (void *)&yes, sizeof(yes));
+  return 0;
+}
 
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  addr.sin_port = htons(TCP_PORT);
-  
-  if(bind(sock_server, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    printf("Error binding to socket\n");
-    keepRunning = false;
-  }
+struct RadarProfile* captureProfile() {
+  struct RadarProfile* profile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
 
-  listen(sock_server, 1024);
-  
+  bool sweepDirectionUp = true;
+
   while(keepRunning) {
-    if((sock_client = accept(sock_server, NULL, NULL)) < 0) {
-      printf("Error accepting connection on socket\n");
-      keepRunning = false;
-    }
+    int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+    profile->timestamp = uint32_t(currentMicro - startupTimestamp);
 
-    size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT);
+    for(int i = 0; i < frequencyCount; i++) {
+      rp_AcqStart();
 
-    printf("size in bytes %zu\n", len);
+      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
+      rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING;
 
-    char *data;
-    data = (char *) calloc(1, len);
-
-    bool clientFault = false;
-    while(keepRunning && !clientFault) {
-
-      printf("got here\n");
-      
-      struct RadarProfile* profile = nullptr;
-
-      while(!profileBuffer.remove(profile)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        //sched_yield();
-      }
-      
-      memcpy(data, profile, len);
-      
-      size_t offset = 0;
-      ssize_t result;
-      while (offset < len) {
-        result = send(sock_client, data + offset, len - offset, 0);
-        if (result < 0) {
-          printf("Error sending!\n");
-          clientFault = true;
+      while(1){
+        rp_AcqGetTriggerState(&state);
+        if(state == RP_TRIG_STATE_TRIGGERED){
           break;
         }
-
-        offset += result;
       }
+
+      rp_AcqStop();
+
+      uint32_t bufferTriggerPosition;
+      rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
+
+      int idx0, idx1;
+      if(sweepDirectionUp) {
+        idx0 = i * sampleCount;
+        idx1 = (sampleCount * frequencyCount) + idx0;
+      } else {
+        idx0 = ((frequencyCount - 1) - i) * sampleCount;
+        idx1 = (sampleCount * frequencyCount) + idx0;
+      }
+
+      rp_AcqGetDataV2(bufferTriggerPosition,
+        &sampleCount,
+        &profile->data[idx0],
+        &profile->data[idx1]);
+
+      rp_DpinSetState(stepPin, RP_HIGH);
+      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
+      rp_DpinSetState(stepPin, RP_LOW);
+
+      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
     }
 
-    close(sock_client);
+    int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+    printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
+
+  return profile;
 }
 
 int main (int argc, char **argv) {
@@ -477,29 +481,19 @@ int main (int argc, char **argv) {
 
   redisConnectionOpts.host = "rover";
   redisConnectionOpts.port = 6379;
-  redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5); 
-  
-  bool connectedToRedis = false;
+  redisConnectionOpts.socket_timeout = std::chrono::milliseconds(5);
 
-  while(!connectedToRedis) {
-    try {
-      redis = new Redis(redisConnectionOpts);
+  redis = new Redis(redisConnectionOpts);
 
-      auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
-      if(timestamp) {
-        string timestampString = *timestamp;
+  auto timestamp = redis->get(STARTUP_TIMESTAMP_KEY);
+  if(timestamp) {
+    string timestampString = *timestamp;
 
-        startupTimestamp = atoll(timestampString.c_str());
-        connectedToRedis = true;
+    startupTimestamp = atoll(timestampString.c_str());
+  } else {
+    std::cout << "Rover startup timestamp not set or invalid, check key: " << STARTUP_TIMESTAMP_KEY << std::endl;
 
-      } else {
-        std::cout << "Rover startup timestamp not set or invalid, check key: " << STARTUP_TIMESTAMP_KEY << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-      }
-    } catch (const Error &err) {
-      std::cout << "Could not connect to redis " << std::endl;
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
+    exit(0);
   }
 
   std::cout << "Rover startup timestamp: " << startupTimestamp << std::endl;
@@ -511,7 +505,6 @@ int main (int argc, char **argv) {
 
     updateParametersFromString(parametersString);
   } else {
-
     ParametersMessage parametersMessage;
 
     std::stringstream packed;
@@ -531,9 +524,7 @@ int main (int argc, char **argv) {
 
     updateParameters(parametersMessage);
   }
-  
-  thread tcpDataServerThread(tcpDataServerTask);
-  
+
   nc::NdArray<float> frequencyRange = nc::linspace<float>(startFrequency, startFrequency + ((frequencyCount - 1) * stepFrequency), frequencyCount);
   frequencyRange.print();
 
@@ -544,7 +535,7 @@ int main (int argc, char **argv) {
   memset(&param, 0, sizeof(param));
   param.sched_priority = sched_get_priority_max(SCHED_FIFO);
   sched_setscheduler(0, SCHED_FIFO, &param);
-  
+
   CPU_ZERO(&mask);
   CPU_SET(1, &mask);
   sched_setaffinity(0, sizeof(cpu_set_t), &mask);
@@ -561,13 +552,12 @@ int main (int argc, char **argv) {
   // needed to set internal flag `triggerDelayInNs = false`
   rp_AcqSetTriggerDelay(0);
   osc_SetTriggerDelay(sampleCount);
-  
+
   rp_AcqSetSamplingRate(RP_SMP_122_880M);
   rp_AcqSetDecimation(RP_DEC_1);
 
   // uint32_t decimation = 1;
   // rp_AcqSetDecimationFactor(&decimation);
-  rp_dpin_t stepPin = RP_DIO5_N;
 
   rp_DpinSetDirection(stepPin, RP_OUT);
   rp_DpinSetState(stepPin, RP_LOW);
@@ -577,7 +567,7 @@ int main (int argc, char **argv) {
 
   rp_DpinSetDirection(channel0LockDetect, RP_IN);
   rp_DpinSetDirection(channel1LockDetect, RP_IN);
-  
+
   sampleTimeInMicro = ((1 / ADC_SAMPLE_RATE) * sampleCount * 1000000);
   //rp_AcqSetTriggerDelayNs(sampleTimeInMicro * 1000);
 
@@ -603,147 +593,106 @@ int main (int argc, char **argv) {
   rfSource.SetParity(Parity::PARITY_NONE);
   rfSource.SetStopBits(StopBits::STOP_BITS_1);
   rfSource.SetCharacterSize(CharacterSize::CHAR_SIZE_8);
-  
+
   sleep(2);
-  tcflush(rfSource.GetFileDescriptor(),TCIOFLUSH);
+  tcflush(rfSource.GetFileDescriptor(), TCIOFLUSH);
 
   rfSource.SendCommand("RST");
 
   std::string status = rfSource.SendCommand("STATUS");
   std::cout << "Synth Status: " << status << std::endl;
 
-  //setFrequency(frequencyRange[0], intermediateFreq);
-  
-  /*std::cout << "before sweep setup:" << std::endl;
-  enableExcitation(transmitPower, loPower);
-  queryFrequency(rfSource);
-  queryPower(rfSource);*/
-  
   enableExcitation(rfSource, transmitPower, loPower);
   std::cout << "Warming up RF PLL..." << std::endl;
   setFrequency(rfSource, frequencyRange[0], intermediateFreq);
   std::this_thread::sleep_for(std::chrono::microseconds(synthWarmupTimeInMicro));
 
   setupSweep(
-    rfSource, 
-    startFrequency, 
-    stepFrequency, 
-    frequencyCount, 
-    intermediateFreq, 
+    rfSource,
+    startFrequency,
+    stepFrequency,
+    frequencyCount,
+    intermediateFreq,
     (stepTriggerTimeInMicro + settlingTimeInMicro + sampleTimeInMicro) / 1000
   );
-  
+
   std::cout << "after sweep setup:" << std::endl;
 
-  //enableExcitation(transmitPower, loPower);
   queryFrequency(rfSource);
   queryPower(rfSource);
- 
 
-  for(int i = 0; i < PROFILE_BUFFER_SIZE; i++) {
-    struct RadarProfile* profile = (RadarProfile *)calloc(1, sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT));
-
-    profileBuffers[i] = profile;
-  }
+  char buf[RECEIVE_BUFFER_SIZE];
+  struct sockaddr_in srv_addr;
+  struct sockaddr_in cli_addr;
+  struct epoll_event events[MAX_EVENTS]; 
   
-  int currentBufferIndex = 0;
-  bool sweepDirectionUp = true;
+  int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+  set_sockaddr(&srv_addr);
+  bind(listen_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
 
-  //setFrequency(frequencyRange[0], intermediateFreq);
-  //std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  setnonblocking(listen_sock);
+  listen(listen_sock, MAX_CONNECTIONS);
+  int epfd = epoll_create(1);
+  epoll_ctl_add(epfd, listen_sock, EPOLLIN | EPOLLOUT | EPOLLET);
 
-  while(keepRunning) {
-    int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-
-    if(currentBufferIndex > (PROFILE_BUFFER_SIZE - 1)) currentBufferIndex = 0;
-
-    profileBuffers[currentBufferIndex]->timestamp = uint32_t(currentMicro - startupTimestamp);
-
-    //std::cout << "timestamp is: " << profileBuffers[currentBufferIndex]->timestamp << std::endl;
+  socklen_t socklen = sizeof(cli_addr);
+  
+  while (keepRunning) {
+    int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
     
-    //rp_DpinSetState(stepPin, RP_HIGH);
-    
-    for(int i = 0; i < frequencyCount; i++) {
-      //setFrequency(rfSource, frequencyRange[i], intermediateFreq);
+    for (int i = 0; i < nfds; i++) {
       
-      //queryFrequency(rfSource);
-      //queryPower(rfSource);
+      if (events[i].data.fd == listen_sock) {
+        
+        int conn_sock = accept(listen_sock, (struct sockaddr *)&cli_addr, &socklen);
 
+        inet_ntop(AF_INET, (char *)&(cli_addr.sin_addr), buf, sizeof(cli_addr));
+        
+        printf("client connected with %s:%d\n", buf, ntohs(cli_addr.sin_port));
 
-      //int64_t startSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+        setnonblocking(conn_sock);
+        epoll_ctl_add(epfd, conn_sock, EPOLLIN | EPOLLET | EPOLLRDHUP | EPOLLHUP);
+      } else if (events[i].events & EPOLLIN) {
+        
+        while (keepRunning) {
+          
+          bzero(buf, sizeof(buf));
+          int n = read(events[i].data.fd, buf, sizeof(buf));
 
-      rp_AcqStart();
-      
-      //sleep(0.5);
-      //std::this_thread::sleep_for(std::chrono::microseconds(sampleTimeInMicro));
+          if (n <= 0 /* || errno == EAGAIN */ ) {
+            break;
+          } else {
+            printf("got trigger request: %s\n", buf);
 
-      rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
-      rp_acq_trig_state_t state = RP_TRIG_STATE_WAITING; 
+            size_t len = sizeof(struct RadarProfile) + (sampleCount * frequencyCount * sizeof(float) * CHANNEL_COUNT);
+            printf("profile size in bytes %zu\n", len);
 
-      while(1){
-        rp_AcqGetTriggerState(&state);
-        if(state == RP_TRIG_STATE_TRIGGERED){
-          break;
+            RadarProfile* profile = captureProfile(); 
+
+            char *data;
+            data = (char *) calloc(1, len);
+
+            memcpy(data, profile, len);
+            write(events[i].data.fd, data, strlen(data));
+          }
         }
-      }
-
-      /*bool fillState = false;
-      while(!fillState) {
-        rp_AcqGetBufferFillState(&fillState);
-      }*/
-     
-      //std::cout << "triggered! " << i << std::endl;
-      //rp_AcqStart();
-      
-      //usleep(settlingTimeInMicro);
-    
-      rp_AcqStop();
-      
-      uint32_t bufferTriggerPosition;
-      rp_AcqGetWritePointerAtTrig(&bufferTriggerPosition);
-      
-      int idx0, idx1; 
-      if(sweepDirectionUp) {
-        idx0 = i * sampleCount;
-        idx1 = (sampleCount * frequencyCount) + idx0;
       } else {
-        idx0 = ((frequencyCount - 1) - i) * sampleCount;
-        idx1 = (sampleCount * frequencyCount) + idx0;
+        printf("client connection unexpected, only a single client is supported\n");
       }
 
-      //std::cout << (sweepDirectionUp ? "sweep up " : "sweep down ") << " indexes: " << idx0 << ", " << idx1 << std::endl;
-
-      rp_AcqGetDataV2(bufferTriggerPosition,
-        &sampleCount,
-        &profileBuffers[currentBufferIndex]->data[idx0],
-        &profileBuffers[currentBufferIndex]->data[idx1]);
-
-      /*if(i == 1) {
-        printf("insert\n");
-        profileBuffer.insert(&profileBuffers[currentBufferIndex]);
-        sleep(100000);
-      }*/
-
-      rp_DpinSetState(stepPin, RP_HIGH);
-      std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
-      rp_DpinSetState(stepPin, RP_LOW);
-      
-      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
-
-      //int64_t endSampleTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+      if (events[i].events & (EPOLLRDHUP | EPOLLHUP)) {
+        
+        printf("client connection closed\n");
+        epoll_ctl(epfd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
+        close(events[i].data.fd);
+        
+        continue;
+      }
     }
-
-    profileBuffer.insert(&profileBuffers[currentBufferIndex]);
-    //sweepDirectionUp = !sweepDirectionUp;
-     
-    currentBufferIndex++; 
-    int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-    
-    printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
   }
 
   //disableExcitation();
-  
+
   rp_Release();
 
   return 0;
