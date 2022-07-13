@@ -253,6 +253,16 @@ class RadarService(object):
         #return await loop.run_in_executor(self.executor, _run)
         return _run()
 
+    async def upload_scan_data(self, start_time, sweep_count = 0, line_count = 0):
+        logger.info(f"Starting S3 upload for scan {start_time}...");
+        
+        s3sync.pathSync(os.path.join(DATA_DIRECTORY, start_time), start_time, sweep_count, line_count)
+
+        syncResult = s3sync.getResult()
+
+        logger.info(f"S3 upload completed for scan {start_time}: {syncResult}")
+        s3sync.fileWrite(self.start_time, syncResult) #save the sync progress output to the json folder
+
     async def rest_process_scan(self, request):
         logger.info(dict(request.rel_url.query))
 
@@ -260,16 +270,10 @@ class RadarService(object):
         run_plots = patternIndex is not None
         await self.process_scan(plots=run_plots)
 
-        ## INSERT 
+        ## INSERT
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.upload_scan_data(start_time=self.start_time, sweep_count = self.sweepCount, line_count = self.line_index))
         
-        print("starting s3 upload...")
-        #abspath will reach the process_scan directory,then we direct the path to the output folder and our new timestamped folder
-        s3sync.pathSync(os.path.join(DATA_DIRECTORY, self.start_time), self.start_time)
-        s3sync.fileWrite(self.start_time, s3sync.getResult()) #save the sync progress output to the json folder
-        
-        #s3sync.fileWriteDict(dict(success=True, **self.to_dict()))
-        #print(self)
-
         return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
 
     #not used with triggering mode
