@@ -273,8 +273,11 @@ class RadarService(object):
         ## INSERT
         loop = asyncio.get_event_loop()
         loop.create_task(self.upload_scan_data(start_time=self.start_time, sweep_count = self.sweepCount, line_count = self.line_index))
+       
+        scanResult = dict(success=True, **self.to_dict())
         
-        return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
+        self.sweepCount = 0 
+        return aiohttp.web.json_response(scanResult)
 
     #not used with triggering mode
     # async def get_data(self):
