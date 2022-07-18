@@ -1,3 +1,8 @@
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=0
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=1
+# http://localhost:9005/scan?patternIndex=0&lineIndex=0&sampleIndex=2
+# http://localhost:9005/proc?patternIndex=0
+
 import time
 import sys
 import argparse
@@ -6,10 +11,13 @@ import json
 import sys
 sys.path.append("..")
 import os
+
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+
+DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), 'output')
 
 import matplotlib
 matplotlib.use("Agg")
@@ -39,9 +47,9 @@ import uvloop
 
 from collections import defaultdict,OrderedDict
 
-
 from concurrent.futures import ThreadPoolExecutor
 
+import s3sync
 
 class RadarService(object):
     trajectoryRunning = False
@@ -115,7 +123,7 @@ class RadarService(object):
 
                 except Exception as e:
                     if "Connection" in str(e):
-                        logger.exception("connection error, restarting")
+                        logger.exception("con'testFolderNew'nection error, restarting")
                         try:
                             async with self.session.get(f"http://{self.radar_address}:8081/restart"):
                                 pass
@@ -250,6 +258,16 @@ class RadarService(object):
         #return await loop.run_in_executor(self.executor, _run)
         return _run()
 
+    async def upload_scan_data(self, start_time, sweep_count = 0, line_count = 0):
+        logger.info(f"Starting S3 upload for scan {start_time}...");
+        
+        s3sync.pathSync(os.path.join(DATA_DIRECTORY, start_time), start_time, sweep_count, line_count)
+
+        syncResult = s3sync.getResult()
+
+        logger.info(f"S3 upload completed for scan {start_time}: {syncResult}")
+        s3sync.fileWrite(self.start_time, syncResult) #save the sync progress output to the json folder
+
     async def rest_process_scan(self, request):
         logger.info(dict(request.rel_url.query))
 
@@ -257,7 +275,14 @@ class RadarService(object):
         run_plots = patternIndex is not None
         await self.process_scan(plots=run_plots)
 
-        return aiohttp.web.json_response(dict(success=True, **self.to_dict()))
+        ## INSERT
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.upload_scan_data(start_time=self.start_time, sweep_count = self.sweepCount, line_count = self.line_index))
+       
+        scanResult = dict(success=True, **self.to_dict())
+        
+        self.sweepCount = 0 
+        return aiohttp.web.json_response(scanResult)
 
     #not used with triggering mode
     # async def get_data(self):
@@ -347,6 +372,7 @@ class RadarService(object):
         data = await request.json()
         with open(f'{self.img}/../data.json', 'w') as f:
             f.write(json.dumps(data))
+            #sync data here
         return aiohttp.web.json_response(self.to_dict())
 
     # async def tcp_rover_server(self, reader, writer):

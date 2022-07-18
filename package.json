@@ -8,9 +8,10 @@
   },
   "dependencies": {
     "express": "^4.18.1",
-    "pm2": "^5.2.0"
+    "msgpack": "^1.0.3",
+    "pm2": "^5.2.0",
+    "redis": "^4.2.0"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
