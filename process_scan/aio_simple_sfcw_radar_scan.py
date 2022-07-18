@@ -169,7 +169,7 @@ class RadarService(object):
                 logger.exception("Failed to write to radar socket, trying to reconnect")
                 await self.refresh_params()
 
-        print("Read data from radar {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds())
+        print("Read data from radar {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
 
 
         self.sweepCount+=1
@@ -181,7 +181,7 @@ class RadarService(object):
         else:
             point_id = self.sweepCount
         filename = f"{line_id}-{point_id}"
-        print("total with memory copy {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds())
+        print("total with memory copy {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
 
 
         if write_file:
@@ -260,7 +260,7 @@ class RadarService(object):
 
     async def upload_scan_data(self, start_time, sweep_count = 0, line_count = 0):
         logger.info(f"Starting S3 upload for scan {start_time}...");
-        
+
         s3sync.pathSync(os.path.join(DATA_DIRECTORY, start_time), start_time, sweep_count, line_count)
 
         syncResult = s3sync.getResult()
@@ -278,10 +278,10 @@ class RadarService(object):
         ## INSERT
         loop = asyncio.get_event_loop()
         loop.create_task(self.upload_scan_data(start_time=self.start_time, sweep_count = self.sweepCount, line_count = self.line_index))
-       
+
         scanResult = dict(success=True, **self.to_dict())
-        
-        self.sweepCount = 0 
+
+        self.sweepCount = 0
         return aiohttp.web.json_response(scanResult)
 
     #not used with triggering mode
