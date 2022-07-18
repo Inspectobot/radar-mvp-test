@@ -137,6 +137,7 @@ class RadarService(object):
 
 
     async def get_data_single(self, point_id=None, line_id=1, timeout=5, write_file=True):
+        start_time = datetime.datetime.utcnow()
         profile = self.RadarProfile()
         while True:
             i = 0
@@ -160,6 +161,8 @@ class RadarService(object):
                 logger.exception("Failed to write to radar socket, trying to reconnect")
                 await self.refresh_params()
 
+        print("Read data from radar {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds())
+
 
         self.sweepCount+=1
         c.memmove(c.addressof(profile), data, c.sizeof(profile))
@@ -170,6 +173,8 @@ class RadarService(object):
         else:
             point_id = self.sweepCount
         filename = f"{line_id}-{point_id}"
+        print("total with memory copy {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds())
+
 
         if write_file:
             loop = asyncio.get_event_loop()
