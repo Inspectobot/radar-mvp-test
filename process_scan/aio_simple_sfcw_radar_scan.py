@@ -169,7 +169,7 @@ class RadarService(object):
                 logger.exception("Failed to write to radar socket, trying to reconnect")
                 await self.refresh_params()
 
-        print("Read data from radar {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
+        logger.info("Read data from radar {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
 
 
         self.sweepCount+=1
@@ -181,7 +181,7 @@ class RadarService(object):
         else:
             point_id = self.sweepCount
         filename = f"{line_id}-{point_id}"
-        print("total with memory copy {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
+        logger.info("total with memory copy {} seconds".format((datetime.datetime.utcnow() - start_time).total_seconds()))
 
 
         if write_file:
