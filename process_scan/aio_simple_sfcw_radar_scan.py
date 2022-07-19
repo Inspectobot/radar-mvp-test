@@ -142,7 +142,7 @@ class RadarService(object):
 
         #hacky thing because it doesn't respond on first profile
         async with self.scan_lock:
-            self.radar_writer.write(b"send \r\n")
+            self.radar_writer.write(b"\r\n")
             await self.radar_writer.drain()
 
 
@@ -157,7 +157,7 @@ class RadarService(object):
                     logger.error("too many attempts to retry radar")
                     raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
                 async with self.scan_lock:
-                    self.radar_writer.write(b"send \r\n")
+                    self.radar_writer.write(b"\r\n")
                     await self.radar_writer.drain()
                     data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
                     break
@@ -421,7 +421,7 @@ class RadarService(object):
             aiohttp.web.post('/start_scan', self.rest_start_scan_post)
             ])
 
-        self.http_runner = aiohttp.web.AppRunner(self.http_app)
+        self.http_runner = aiohttp.web.AppRunner(self.http_app,access_log_format='%a %t "%r" %s %b "%{Referer}i" "%{User-Agent}i" time: %Tf')
 
         await self.http_runner.setup()
         print("ran http setup")
