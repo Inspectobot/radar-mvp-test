@@ -63,7 +63,7 @@ class RadarService(object):
     http_port = 9005
     http_address='0.0.0.0'
 
-    executor = ThreadPoolExecutor(max_workers=1)
+    executor = ThreadPoolExecutor(max_workers=4)
 
     run_data_coro = None
 
