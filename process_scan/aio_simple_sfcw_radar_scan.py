@@ -126,7 +126,7 @@ class RadarService(object):
 
                 except Exception as e:
                     if "Connection" in str(e):
-                        logger.exception("con'testFolderNew'nection error, restarting")
+                        logger.exception("connection error, restarting")
                         try:
                             async with self.session.get(f"http://{self.radar_address}:8081/restart"):
                                 pass
@@ -142,7 +142,7 @@ class RadarService(object):
 
         #hacky thing because it doesn't respond on first profile
         async with self.scan_lock:
-            self.radar_writer.write(b"send")
+            self.radar_writer.write(b"send \r\n")
             await self.radar_writer.drain()
 
 
@@ -157,7 +157,7 @@ class RadarService(object):
                     logger.error("too many attempts to retry radar")
                     raise aiohttp.web.HTTPFailedDependency(text="too many attempts to retry radar")
                 async with self.scan_lock:
-                    self.radar_writer.write(b"send")
+                    self.radar_writer.write(b"send \r\n")
                     await self.radar_writer.drain()
                     data = await asyncio.wait_for(self.radar_reader.readexactly(c.sizeof(self.RadarProfile())), timeout=timeout)
                     break
