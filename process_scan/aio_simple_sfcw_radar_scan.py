@@ -111,9 +111,12 @@ class RadarService(object):
         params = self.params = msgpack.unpackb(await self.redis.get('radar_parameters'))
         self.RadarProfile = CreateRadarProfile(params['channelCount'], params['sampleCount'], params['frequencyCount'])
         if restart_radar:
-            async with self.session.get(f"http://{self.radar_address}:8081/restart"):
-                pass
-            await asyncio.sleep(15)
+            try:
+                async with self.session.get(f"http://{self.radar_address}:8081/restart"):
+                    pass
+                await asyncio.sleep(15)
+            except Exception as e:
+                logger.exception("Unable to restart radar")
 
         if reset_radar_connection:
             while True:
