@@ -141,9 +141,9 @@ class RadarService(object):
         self._setup_dirs()
 
         #hacky thing because it doesn't respond on first profile
-        async with self.scan_lock:
-            self.radar_writer.write(b"\r\n")
-            await self.radar_writer.drain()
+        # async with self.scan_lock:
+        #     self.radar_writer.write(b"\r\n")
+        #     await self.radar_writer.drain()
 
 
 
