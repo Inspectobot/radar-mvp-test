@@ -96,6 +96,7 @@ float intermediateFreq = 32.00;
 float transmitPower    = 0.00;
 float loPower          = 15.00;
 uint32_t sampleCount = 2048;
+int initialSettlingTimeInMicro = 500000;
 int settlingTimeInMicro = 500000;
 int bufferSampleDelay = 8192;
 int sampleTimeInMicro = 133;
@@ -119,6 +120,7 @@ struct ParametersMessage {
   float transmitPower = 0.00;
   float loPower = 15.00;
   uint32_t sampleCount = 2048;
+  int initialSettlingTimeInMicro = 200000;
   int settlingTimeInMicro = 200000;
   int bufferSampleDelay = 8192;
   int stepTriggerTimeInMicro = 5;
@@ -136,6 +138,7 @@ struct ParametersMessage {
     transmitPower,
     loPower,
     sampleCount,
+    initialSettlingTimeInMicro
     settlingTimeInMicro,
     bufferSampleDelay,
     stepTriggerTimeInMicro,
@@ -158,6 +161,7 @@ void updateParameters(ParametersMessage parametersMessage) {
   transmitPower = parametersMessage.transmitPower;
   loPower = parametersMessage.loPower;
   sampleCount = parametersMessage.sampleCount;
+  initialSettlingTimeInMicro = parametersMessage.initialSettlingTimeInMicro;
   settlingTimeInMicro = parametersMessage.settlingTimeInMicro;
   bufferSampleDelay = parametersMessage.bufferSampleDelay;
   stepTriggerTimeInMicro = parametersMessage.stepTriggerTimeInMicro;
@@ -459,7 +463,13 @@ void captureProfile(RadarProfile* profile) {
     std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
     rp_DpinSetState(stepPin, RP_LOW);
 
-    std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
+    // if we are on the last step, wait for the initial time 
+    // (steps to the start frequency to prepare for a new sweep)
+    if(i == (frequencyCount - 1)) {
+      std::this_thread::sleep_for(std::chrono::microseconds(initialSettlingTimeInMicro));
+    } else {
+      std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
+    }
   }
 
   int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
