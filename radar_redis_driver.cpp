@@ -678,12 +678,17 @@ int main (int argc, char **argv) {
             printf("got trigger request: %s\n", buf);
 
             printf("profile size in bytes %zu\n", len);
+            
+            int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
             captureProfile(profileBuffer);
-
+            
             bzero(profileData, len);
             memcpy(profileData, profileBuffer, len);
             write(events[i].data.fd, profileData, len);
+
+            int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+            printf("Total time to send data, took %lld microseconds\n", endTime - currentMicro);
           }
         }
       } else {
