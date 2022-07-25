@@ -138,7 +138,7 @@ struct ParametersMessage {
     transmitPower,
     loPower,
     sampleCount,
-    initialSettlingTimeInMicro
+    initialSettlingTimeInMicro,
     settlingTimeInMicro,
     bufferSampleDelay,
     stepTriggerTimeInMicro,
