@@ -66,7 +66,7 @@ class IQDemodulator():
         self._ft= ft
         self._number_of_taps=number_of_taps
         self._fs=fs
-        #self._Ts=1/self._fs
+        self._Ts=1/self._fs
         self._t_sample = t_sample
         self._n=n
 
