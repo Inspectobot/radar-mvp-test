@@ -138,7 +138,7 @@ struct ParametersMessage {
     transmitPower,
     loPower,
     sampleCount,
-    initialSettlingTimeInMicro
+    initialSettlingTimeInMicro,
     settlingTimeInMicro,
     bufferSampleDelay,
     stepTriggerTimeInMicro,
@@ -273,9 +273,12 @@ void disableExcitation(SynthSerialPort& rfSource) {
   rfSource.SendCommand("Source 1");
 }
 
+int listen_sock;
 void intHandler(int dummy) {
 	if (keepRunning == 0) {
 		printf("shutting down!\n");
+    
+    close(listen_sock);
     //disableExcitation();
 
     rp_Release();
@@ -427,7 +430,12 @@ void captureProfile(RadarProfile* profile) {
   int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
   profile->timestamp = uint32_t(currentMicro - startupTimestamp);
 
+  int64_t totalADCTimeInMicro = 0;
+  int64_t totalSynthTimeInMicro = 0;
+
   for(int i = 0; i < frequencyCount; i++) {
+    int64_t startADCTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
     rp_AcqStart();
 
     rp_AcqSetTriggerSrc(RP_TRIG_SRC_NOW);
@@ -458,6 +466,12 @@ void captureProfile(RadarProfile* profile) {
       &sampleCount,
       &profile->data[idx0],
       &profile->data[idx1]);
+    
+    int64_t endADCTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+    totalADCTimeInMicro += (endADCTimeMicro - startADCTimeMicro);
+
+    int64_t startSynthTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
     rp_DpinSetState(stepPin, RP_HIGH);
     std::this_thread::sleep_for(std::chrono::microseconds(stepTriggerTimeInMicro));
@@ -470,11 +484,17 @@ void captureProfile(RadarProfile* profile) {
     } else {
       std::this_thread::sleep_for(std::chrono::microseconds(settlingTimeInMicro));
     }
+
+    int64_t endSynthTimeMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+
+    totalSynthTimeInMicro += (endSynthTimeMicro - startSynthTimeMicro);
   }
 
   int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
   printf("Sweep Done, took %lld microseconds\n", endTime - currentMicro);
+  printf("Total time spent capturing data: %lld microseconds\n", totalADCTimeInMicro);
+  printf("Total time spent waiting on synth: %lld microseconds\n", totalSynthTimeInMicro);
 }
 
 int main (int argc, char **argv) {
@@ -646,7 +666,7 @@ int main (int argc, char **argv) {
   struct sockaddr_in cli_addr;
   struct epoll_event events[MAX_EVENTS]; 
   
-  int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+  listen_sock = socket(AF_INET, SOCK_STREAM, 0);
   set_sockaddr(&srv_addr);
   bind(listen_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
 
@@ -688,12 +708,17 @@ int main (int argc, char **argv) {
             printf("got trigger request: %s\n", buf);
 
             printf("profile size in bytes %zu\n", len);
+            
+            int64_t currentMicro = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
 
             captureProfile(profileBuffer);
-
+            
             bzero(profileData, len);
             memcpy(profileData, profileBuffer, len);
             write(events[i].data.fd, profileData, len);
+
+            int64_t endTime = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+            printf("Total time to send data, took %lld microseconds\n", endTime - currentMicro);
           }
         }
       } else {
@@ -711,7 +736,9 @@ int main (int argc, char **argv) {
     }
   }
 
-  //disableExcitation();
+  close(listen_sock);
+
+  disableExcitation(rfSource);
 
   rp_Release();
 
